@@ -1,0 +1,20 @@
+<p>
+<strong>NSI</strong> is a simple HTML index generator and pseudo-framework for 
+small websites written in Perl, intended to enforce style consistency
+while also increasing flexibility when working with many static HTML pages.
+</p> 
+<p>
+NSI began as a learning exercise to develop a simple monitoring page for an 
+aging AIX system with limited language support, but it has since taken on 
+a more general-purpose role with features such as:
+</p>
+<ul>
+  <li>Displaying preformatted file and shell script output</li>
+  <li>Static HTML wrapping</li>
+  <li>Dynamic table of contents generation for pages and directory trees</li>
+  <li>Dynamic navigation controls</li>
+  <li>...and <strong>more</strong>, as new use cases emerge</li>
+</ul>
+<p>
+<strong>If you are seeing this page after cloning the NSI repository into a directory on your web server, it means NSI is working correctly and is ready to configure to your needs.</strong>
+</p>

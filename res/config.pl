@@ -1,0 +1,83 @@
+#!/usr/bin/env perl
+# -----------------------------------------------------------------------------
+# NSI site configuration file
+# -----------------------------------------------------------------------------
+# Server information                                                server,host
+# -----------------------------------------------------------------------------
+$ENV{'PATH'}  = "$ENV{'PATH'}:/bin:/usr/bin:/usr/local/bin";
+$ENV{'PATH'}  = "$ENV{'PATH'}:/sbin:/usr/sbin:/usr/local/sbin";
+$ENV{'PATH'}  = "$ENV{'PATH'}:/usr/pkg/bin:/usr/pkg/sbin";
+$HOSTNAME     = `hostname -s`;
+$CURRENT_TIME = `date`;
+# -----------------------------------------------------------------------------
+# Site information					   	      site,info
+# -----------------------------------------------------------------------------
+$ORGANIZATION = "NFINIT labs";
+$SITE_NAME    = "NSI Development Repository"; 
+# -----------------------------------------------------------------------------
+# Display preferences							display
+# -----------------------------------------------------------------------------
+$DYNAMIC_LANDING =  0; # Generate a dynamic landing (home) page if no content
+$NAVIGATION_MENU =  1; # Display a site navigation menu
+$ROOT_NAVIGATION =  0; # Display site navigation on home page
+$TOC_NAV         =  1; # Use table of contents of parent page for navigation
+$ROOT_TOC_NAV    =  0; # Use table of contents of home page only for navigation
+$NAV_POSITION    =  1; # Site navigation position (top: 1, bottom: -1, none: 0)
+$FOOTER_NAV      =  1; # Enable navigation controls in the page footer
+$CENTER_TITLE    =  0; # Force center page title
+$AUTO_RULE       =  1; # Draw rule separators between dynamic components
+$LIST_UL         =  1; # Bullet tables of contents and other dynamic lists 
+$SUB_LOGO        =  0; # Show site logo on subpage titles
+# -----------------------------------------------------------------------------
+# Display elements							display
+# -----------------------------------------------------------------------------
+$LINE_ELEMENTS        = 1;
+$LINE_ELEMENT_DIVIDER = " | ";
+$LINE_FRAME_L         = "[ ";
+$LINE_FRAME_R         = " ]";
+# -----------------------------------------------------------------------------
+# Landing page preferences						landing	
+# -----------------------------------------------------------------------------
+$SYSTEM_STATUS = 1; # Show system status report referenced by $STATUS_COMMAND
+# -----------------------------------------------------------------------------
+# Metadata                                                             metadata
+# -----------------------------------------------------------------------------
+$HTML_DOCTYPE = "html";
+$CLOUDFLARE   = 1; # Set to 1 if this system is proxied by Cloudflare
+# -----------------------------------------------------------------------------
+# Resource paths                                                      resources
+# -----------------------------------------------------------------------------
+$RESOURCE_DIRECTORY      = "res";
+$STYLE_DIRECTORY         = "${RESOURCE_DIRECTORY}/style";
+$IMAGE_DIRECTORY         = "${RESOURCE_DIRECTORY}/img";
+$MEDITATION_DIRECTORY    = "${IMAGE_DIRECTORY}/meditations";
+$SITE_RESOURCE_DIRECTORY = "/res";
+$SITE_IMAGE_DIRECTORY    = "${SITE_RESOURCE_DIRECTORY}/img";
+$SITE_STYLE_DIRECTORY    = "${SITE_RESOURCE_DIRECTORY}/style";
+$SITE_MEDITATION_DIRECTORY = "${SITE_IMAGE_DIRECTORY}/meditations";
+# -----------------------------------------------------------------------------
+# HTML includes                                                        includes 
+# -----------------------------------------------------------------------------
+$TITLE_FILE = ".title";
+$INTRO_FILE = ".intro";
+$BODY_FILE  = "body.html";
+# -----------------------------------------------------------------------------
+# System scripts                                                        scripts 
+# -----------------------------------------------------------------------------
+$STATUS_COMMAND = `/usr/shell/sitrep`;
+# -----------------------------------------------------------------------------
+# Table of contents configuration                                  contents,toc 
+# -----------------------------------------------------------------------------
+$SHOW_TOC = 1;
+$TREE_TOC = 1; # Generate TOC using the filesystem 
+$TOC_FILE = ".info";
+# -----------------------------------------------------------------------------
+# Resources                                                           resources
+# -----------------------------------------------------------------------------
+$FAVICON              = "${SITE_IMAGE_DIRECTORY}/favicon.ico";
+$LOGO                 = "${SITE_IMAGE_DIRECTORY}/logo.gif";
+$MAIN_STYLESHEET      = "${SITE_STYLE_DIRECTORY}/style.css"; 
+$LEGACY_STYLESHEET    = "${SITE_STYLE_DIRECTORY}/legacy.css"; 
+$MEDITATION_FILETYPES = ".gif|.jpg|.png";
+# -----------------------------------------------------------------------------
+1 # Expression must be evaluated to pass load check

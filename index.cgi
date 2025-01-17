@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- # 
-my $version = '2.2.5';
+my $version = '2.2.8';
 # --------------------------------------------------------------------------- #
 
 $_SITE_ROOT     = $ENV{DOCUMENT_ROOT} . "/";
@@ -307,6 +307,17 @@ sub page_toc {
 
 # Navigation subroutines ~~~~~~~--------------------------------------------- #
 
+sub cwd_nested_in {
+	my $target_directory = shift; # Get first argument
+	return if !$target_directory;
+  $target_directory =~ /\/$/;
+  my $current_directory = cwd();
+  $current_directory =~ /\/$/;
+  $current_directory =~ s/^$ENV{DOCUMENT_ROOT}//;
+  $target_directory  =~ s/^$ENV{DOCUMENT_ROOT}//;
+  return $current_directory =~ /^$target_directory/;
+}
+
 sub navigation_menu {
   return if (!$NAVIGATION_MENU);
 	return if (!$ROOT_NAVIGATION && cwd() eq $ENV{DOCUMENT_ROOT});
@@ -314,12 +325,18 @@ sub navigation_menu {
   my @menu_items;
   if ($TOC_NAV) {
     my @TOC;
-    my $toc_target = cwd();
-    $toc_target =~ /\/$/;
-    $toc_target = dirname($toc_target);
+    my $toc_target;
+    if ($ROOT_TOC_NAV) {
+      $toc_target = $ENV{DOCUMENT_ROOT};
+      $toc_target =~ /\/$/;
+    } else {
+      $toc_target = cwd();
+      $toc_target =~ /\/$/;
+      $toc_target = dirname($toc_target);
+    }
     @TOC = toc($toc_target);
     return if (!@TOC);
-    my @nav_items = (['<strong>Home</strong>','/']);
+    my @nav_items = (['Home','/']);
 	  push(@nav_items,@TOC);
     my $item_count = 0;
     foreach my $toc_link (@nav_items) {
@@ -332,6 +349,9 @@ sub navigation_menu {
       $list_item .= "${item_name}";
       if ("$ENV{DOCUMENT_ROOT}${item_path}" eq cwd() . '/') {
         $list_item = "<EM>${list_item}</EM>";
+      } elsif (cwd_nested_in($item_path) && ($item_path ne '/')) {
+        #$list_item = "<EM>${list_item}</EM>";
+        $list_item = "<STRONG><A HREF=\"${item_path}\">${list_item}</A></STRONG>";
       } else {
         $list_item = "<A HREF=\"${item_path}\">${list_item}</A>";
       } 
@@ -341,8 +361,8 @@ sub navigation_menu {
       $menu .= $list_item;
     }
   }
-  $menu = "<DIV ID=\"navigation\">\n${menu}</DIV>\n";
   $menu = auto_hr() . $menu;
+  $menu = "<DIV ID=\"navigation\" CLASS=\"no_print\">\n${menu}</DIV>\n";
   return ($menu); 
 }
 
@@ -366,11 +386,13 @@ sub page_footer {
 	# Content in the RIGHT ALIGNED block
 	if ($FOOTER_NAV && cwd() ne $ENV{DOCUMENT_ROOT}) {
 		my $footer_nav;
-		$footer_nav .= "<SPAN CLASS=\"footer_navigation\">\n";
+		$footer_nav .= "<SPAN CLASS=\"footer_navigation no_print\">\n";
 		$footer_nav .= $LINE_FRAME_L if ($LINE_ELEMENTS);
 		$footer_nav .= "<A HREF=\"..\">Up</A>\n";
-		$footer_nav .= $LINE_ELEMENT_DIVIDER if ($LINE_ELEMENTS);
-		$footer_nav .= "<A HREF=\"/\">Home</A>\n";
+    if ($NAVIGATION_MENU && $NAV_POSITION >= 0) {
+		  $footer_nav .= $LINE_ELEMENT_DIVIDER if ($LINE_ELEMENTS);
+		  $footer_nav .= "<A HREF=\"/\">Home</A>\n";
+    }
 		$footer_nav .= $LINE_FRAME_R if ($LINE_ELEMENTS);
 		$footer_nav .= "</SPAN>\n";
 		$footer_right .= $footer_nav;
@@ -416,7 +438,7 @@ sub metadata_title {
   }
   $title = '' if ($SITE_NAME eq $title);
   $page_title .= "${SITE_NAME}" if ($SITE_NAME);
-  $page_title .= ": "           if ($SITE_NAME && $title); 
+  $page_title .= " - "          if ($SITE_NAME && $title); 
   $page_title .= "${title}"     if ($title); 
   $page_title  = $META_TITLE    if ($META_TITLE);
   return if (!$page_title);

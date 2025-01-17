@@ -7,4 +7,14 @@ body { padding: 1vw;}
 .script-output { 
   font-size: 1.8vw; 
   padding: 1vw;
-} @media screen and (min-width: 800px) { .script-output { font-size: 14px; } }
+} 
+
+@media screen and (min-width: 800px) 
+{ 
+	.script-output { font-size: 14px; } 
+}
+
+@media print
+{    
+    .no_print { display: none !important; }
+} 

@@ -145,7 +145,7 @@ sub get_page_title {
   if ($PAGE_TITLE) 
   { 
     $title = "${PAGE_TITLE}"; 
-  } elsif ( -f $TITLE_FILE ) {
+  } elsif ( -f "${TITLE_FILE}" ) {
     open(my $title_html, '<', $TITLE_FILE)
       or die "Cannot open static content file $TITLE_FILE";
     { 

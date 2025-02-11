@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- # 
-my $version = '2.3.0';
+my $version = '2.3.2';
 # --------------------------------------------------------------------------- #
 
 $_SITE_ROOT     = $ENV{DOCUMENT_ROOT} . "/";
@@ -38,7 +38,8 @@ $BODY_FILE $TITLE_FILE $INTRO_FILE $TOC_FILE
 
 $LOGO $FAVICON
 
-$IMAGE_DIRECTORY $PREVIEW_DIRECTORY $LEGACY_PREVIEW_DIRECTORY
+$IMAGE_DIRECTORY $API_IMAGE_DIRECTORY $PREVIEW_DIRECTORY 
+$LEGACY_PREVIEW_DIRECTORY
 
 $MEDITATION_DIRECTORY $MEDITATION_FILETYPES
 
@@ -480,38 +481,99 @@ sub generate_metadata {
   return($metadata);
 }
 
-# Get random preview image URL
+# Get random preview image and return the file path
 sub random_preview {
-  my $preview;
-  return if (! -d $PREVIEW_DIRECTORY);
-  opendir(PREVIEWS,$PREVIEW_DIRECTORY) or die $!;
-  my @previews = grep /$PREVIEW_FILETYPES/, readdir(PREVIEWS);
+  return if (! -d $API_IMAGE_DIRECTORY);
+  opendir(PREVIEWS,$API_IMAGE_DIRECTORY) or die $!;
+  my @previews = grep /$IMAGE_FILETYPES/, readdir(PREVIEWS);
   closedir(PREVIEWS);
   my $preview_count = scalar @previews;
   return if (!$preview_count);
   my $selection = int(rand($preview_count));
-  $preview = "$PREVIEW_DIRECTORY/$previews[$selection]";
-  return($preview);
+  return "$API_IMAGE_DIRECTORY/$previews[$selection]";
 }
 
-# API response handlers
-sub handle_api_request {
-  my $query_string = $ENV{QUERY_STRING} || ''; 
-  my @pairs = split(/[&;]/, $query_string);
-  foreach(@pairs)
-  {
-    my($key, $value) = split(/=/, $_, 2);
-    if ($key eq 'random-preview') {
-    	my $preview_url = random_preview();
-    	if ($preview_url) {
-      	  print "Content-type: application/json\n\n";
-          print "{\n  \"url\": \"$preview_url\"\n}\n";
-          return 1;
-	    }
+# Get random preview image recursively from directory tree and return the file path
+sub random_preview_recursive {
+  my $dir = shift || cwd();  # Start from current directory if none specified
+  return if (!$dir);
+  
+  my @all_previews;
+  
+  # Helper function to recursively find preview files
+  my $find_previews;
+  $find_previews = sub {
+    my $current_dir = shift;
+    return if (!$current_dir || ! -d $current_dir);
+    
+    opendir(my $dh, $current_dir) or return; # Skip if can't open
+    my @entries = grep { !/^\.\.?$/ } readdir($dh);
+    closedir($dh);
+    
+    foreach my $entry (@entries) {
+      my $path = "$current_dir/$entry";
+      if (-d $path) {
+        # Check if this directory is a preview directory
+        if ($entry eq basename($API_IMAGE_DIRECTORY)) {
+          opendir(my $pdh, $path) or next;
+          my @previews = grep { /$IMAGE_FILETYPES/ } readdir($pdh);
+          closedir($pdh);
+          push @all_previews, map { "$path/$_" } @previews;
+        }
+        # Recursively search subdirectories
+        $find_previews->($path);
+      }
     }
-	 
-  }
-  return 1;
+  };
+  
+  # Start the recursive search from the current directory
+  $find_previews->($dir);
+  
+  my $preview_count = scalar @all_previews;
+  return if (!$preview_count);
+  
+  my $selection = int(rand($preview_count));
+  return $all_previews[$selection];
+}
+
+# API handler
+sub handle_api_request {
+	if ($API_ENABLED) {
+  	my $query_string = $ENV{QUERY_STRING} || ''; 
+  	my @pairs = split(/[&;]/, $query_string);
+  	foreach(@pairs)
+  	{
+    	my($key, $value) = split(/=/, $_, 2);
+    	if ($key eq 'random-preview') {
+      	my $preview_path;
+      	if ($value eq 'recursive') {
+        	$preview_path = random_preview_recursive();
+      	} else {
+        	$preview_path = random_preview();
+      	}
+      
+      	if ($preview_path && -f $preview_path) {
+        	# Get the file extension to determine content type
+        	my $content_type = 'image/jpeg';  # Default to JPEG
+        	if ($preview_path =~ /\.png$/i) {
+          	$content_type = 'image/png';
+        	} elsif ($preview_path =~ /\.gif$/i) {
+          	$content_type = 'image/gif';
+        	}
+        
+        	# Read and output the image file
+        	if (open(my $image, '<', $preview_path)) {
+          	binmode($image);
+          	print "Content-type: ${content_type}\n\n";
+          	print do { local $/; <$image> };
+          	close($image);
+          	return 1;
+        	}
+      	}
+    	}
+  	}
+	}
+  return 0;
 }
 
 # Content generation -------------------------------------------------------- #

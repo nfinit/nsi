@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- # 
-my $version = '2.2.8';
+my $version = '2.3.0';
 # --------------------------------------------------------------------------- #
 
 $_SITE_ROOT     = $ENV{DOCUMENT_ROOT} . "/";
@@ -37,6 +37,8 @@ $CENTER_TITLE $AUTO_RULE $SUB_LOGO $TREE_TOC
 $BODY_FILE $TITLE_FILE $INTRO_FILE $TOC_FILE
 
 $LOGO $FAVICON
+
+$IMAGE_DIRECTORY $PREVIEW_DIRECTORY $LEGACY_PREVIEW_DIRECTORY
 
 $MEDITATION_DIRECTORY $MEDITATION_FILETYPES
 
@@ -478,8 +480,47 @@ sub generate_metadata {
   return($metadata);
 }
 
+# Get random preview image URL
+sub random_preview {
+  my $preview;
+  return if (! -d $PREVIEW_DIRECTORY);
+  opendir(PREVIEWS,$PREVIEW_DIRECTORY) or die $!;
+  my @previews = grep /$PREVIEW_FILETYPES/, readdir(PREVIEWS);
+  closedir(PREVIEWS);
+  my $preview_count = scalar @previews;
+  return if (!$preview_count);
+  my $selection = int(rand($preview_count));
+  $preview = "$PREVIEW_DIRECTORY/$previews[$selection]";
+  return($preview);
+}
+
+# API response handlers
+sub handle_api_request {
+  my $query_string = $ENV{QUERY_STRING} || ''; 
+  my @pairs = split(/[&;]/, $query_string);
+  foreach(@pairs)
+  {
+    my($key, $value) = split(/=/, $_, 2);
+    if ($key eq 'random-preview') {
+    	my $preview_url = random_preview();
+    	if ($preview_url) {
+      	  print "Content-type: application/json\n\n";
+          print "{\n  \"url\": \"$preview_url\"\n}\n";
+          return 1;
+	    }
+    }
+	 
+  }
+  return 1;
+}
+
 # Content generation -------------------------------------------------------- #
 my $_NSI_CONTENT;
+
+# Check for API requests first
+if (handle_api_request()) {
+  exit;
+}
 
 # If HTML body file exists, override all content
 if (-f $BODY_FILE) {

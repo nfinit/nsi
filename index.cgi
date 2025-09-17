@@ -481,28 +481,28 @@ sub generate_metadata {
   return($metadata);
 }
 
-# Get random preview image and return the file path
-sub random_preview {
+# Get random image and return the file path
+sub random_image {
   return if (! -d $API_IMAGE_DIRECTORY);
-  opendir(PREVIEWS,$API_IMAGE_DIRECTORY) or die $!;
-  my @previews = grep /$IMAGE_FILETYPES/, readdir(PREVIEWS);
-  closedir(PREVIEWS);
-  my $preview_count = scalar @previews;
-  return if (!$preview_count);
-  my $selection = int(rand($preview_count));
-  return "$API_IMAGE_DIRECTORY/$previews[$selection]";
+  opendir(IMAGES,$API_IMAGE_DIRECTORY) or die $!;
+  my @images = grep /$IMAGE_FILETYPES/, readdir(IMAGES);
+  closedir(IMAGES);
+  my $image_count = scalar @images;
+  return if (!$image_count);
+  my $selection = int(rand($image_count));
+  return "$API_IMAGE_DIRECTORY/$images[$selection]";
 }
 
-# Get random preview image recursively from directory tree and return the file path
-sub random_preview_recursive {
+# Get random image recursively from directory tree and return the file path
+sub random_image_recursive {
   my $dir = shift || cwd();  # Start from current directory if none specified
   return if (!$dir);
   
-  my @all_previews;
+  my @all_images;
   
-  # Helper function to recursively find preview files
-  my $find_previews;
-  $find_previews = sub {
+  # Helper function to recursively find image files
+  my $find_images;
+  $find_images = sub {
     my $current_dir = shift;
     return if (!$current_dir || ! -d $current_dir);
     
@@ -513,27 +513,27 @@ sub random_preview_recursive {
     foreach my $entry (@entries) {
       my $path = "$current_dir/$entry";
       if (-d $path) {
-        # Check if this directory is a preview directory
+        # Check if this directory is an API image directory
         if ($entry eq basename($API_IMAGE_DIRECTORY)) {
           opendir(my $pdh, $path) or next;
-          my @previews = grep { /$IMAGE_FILETYPES/ } readdir($pdh);
+          my @images = grep { /$IMAGE_FILETYPES/ } readdir($pdh);
           closedir($pdh);
-          push @all_previews, map { "$path/$_" } @previews;
+          push @all_images, map { "$path/$_" } @images;
         }
         # Recursively search subdirectories
-        $find_previews->($path);
+        $find_images->($path);
       }
     }
   };
   
   # Start the recursive search from the current directory
-  $find_previews->($dir);
+  $find_images->($dir);
   
-  my $preview_count = scalar @all_previews;
-  return if (!$preview_count);
+  my $image_count = scalar @all_images;
+  return if (!$image_count);
   
-  my $selection = int(rand($preview_count));
-  return $all_previews[$selection];
+  my $selection = int(rand($image_count));
+  return $all_images[$selection];
 }
 
 # API handler
@@ -544,25 +544,25 @@ sub handle_api_request {
   	foreach(@pairs)
   	{
     	my($key, $value) = split(/=/, $_, 2);
-    	if ($key eq 'random-preview') {
-      	my $preview_path;
+    	if ($key eq 'random-image') {
+      	my $image_path;
       	if ($value eq 'recursive') {
-        	$preview_path = random_preview_recursive();
+        	$image_path = random_image_recursive();
       	} else {
-        	$preview_path = random_preview();
+        	$image_path = random_image();
       	}
       
-      	if ($preview_path && -f $preview_path) {
+      	if ($image_path && -f $image_path) {
         	# Get the file extension to determine content type
         	my $content_type = 'image/jpeg';  # Default to JPEG
-        	if ($preview_path =~ /\.png$/i) {
+        	if ($image_path =~ /\.png$/i) {
           	$content_type = 'image/png';
-        	} elsif ($preview_path =~ /\.gif$/i) {
+        	} elsif ($image_path =~ /\.gif$/i) {
           	$content_type = 'image/gif';
         	}
         
         	# Read and output the image file
-        	if (open(my $image, '<', $preview_path)) {
+        	if (open(my $image, '<', $image_path)) {
           	binmode($image);
           	print "Content-type: ${content_type}\n\n";
           	print do { local $/; <$image> };

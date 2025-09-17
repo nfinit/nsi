@@ -16,5 +16,8 @@ a more general-purpose role with features such as:
   <li>...and <strong>more</strong>, as new use cases emerge</li>
 </ul>
 <p>
-<strong>If you are seeing this page after cloning the NSI repository into a directory on your web server, it means NSI is working correctly and is ready to configure to your needs.</strong>
+<strong>
+This page has been instantiated directly from the 
+<a href="https://github.com/nfinit/nsi">NSI GitHub repository</a>.
+</strong> 
 </p>

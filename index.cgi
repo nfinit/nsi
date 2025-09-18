@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- # 
-my $version = '2.4.2';
+my $version = '2.4.5';
 # --------------------------------------------------------------------------- #
 
 $_SITE_ROOT     = $ENV{DOCUMENT_ROOT} . "/";
@@ -11,6 +11,7 @@ $_LOCAL_CONFIG = "./.config.pl";
 # =========================================================================== #
 use Cwd;
 use File::Basename;
+use Time::HiRes qw(time);
 # --------------------------------------------------------------------------- #
 # All variables can be sourced from either configuration file, however:
 # Variables after $SITE_VARS should be sourced from your SITE configuration
@@ -39,7 +40,7 @@ $BODY_FILE $TITLE_FILE $INTRO_FILE $TOC_FILE
 $LOGO $FAVICON
 
 $IMAGE_DIRECTORY $API_IMAGE_DIRECTORY $PREVIEW_DIRECTORY 
-$LEGACY_PREVIEW_DIRECTORY
+$LEGACY_PREVIEW_DIRECTORY $FULLSIZE_IMAGE_DIRECTORY
 
 $PREVIEW_WIDTH $LEGACY_PREVIEW_WIDTH
 
@@ -50,7 +51,9 @@ $MAIN_STYLESHEET $LEGACY_STYLESHEET
 $SYSTEM_STATUS $STATUS_COMMAND
 
 $HOSTNAME $ORGANIZATION $SITE_NAME
- 
+
+$DEBUG_TRACE
+
 );
 # Configuration processing -------------------------------------------------- #
 if (-f $_SITE_CONFIG && !do $_SITE_CONFIG) { $SITE_CONFIG_ERRORS++; }
@@ -101,6 +104,17 @@ sub preformat_text {
 	return if (!$text);
 	return "<PRE CLASS=\"script-output\">\n${text}</PRE>\n";
 }
+
+my $_DEBUG_TRACE_LINES;
+sub debug_line {
+	my $line = shift @_;
+	return if (!$DEBUG_TRACE);
+	return if (!$line);
+	$_DEBUG_TRACE_LINES .= "[" . time . "] ${line}\n";
+	return;
+}
+debug_line("*** DEBUG TRACE ***");
+debug_line("uid=$>, gids=$)");
 
 # Generic dynamic content subroutines --------------------------------------- #
 
@@ -215,25 +229,17 @@ sub page_intro {
 # Generate a table of contents array for a specified directory tree using
 # files as defined by the $TOC_FILE variable for titles and descriptions
 sub tree_toc {
-  # print STDERR "Tree TOC requested.\n";
 	my @TOC;
 	my $target_directory = shift; # Get first argument
 	$target_directory = '.' if !$target_directory;
-  #print STDERR "Current directory: " . cwd() . "\n";
-  # print STDERR "Root directory: " . $ENV{DOCUMENT_ROOT} . "\n";
-  # print STDERR "Target directory: ${target_directory}\n";
 	if (opendir(ROOT,"${target_directory}")) {
 		my @contents = grep !/^.\.*$/, readdir(ROOT);
 		closedir(ROOT);
-    # print STDERR "Items found: @contents\n";
 		foreach $item (@contents) {
         $item = $target_directory . '/' . $item;
 			if (-d $item) {
-        # print STDERR "Directory: $item\n";
 				my $item_data = "${item}/${TOC_FILE}";
-        # print STDERR "Searching for ${item_data}...\n";
 				if (-f $item_data) {
-          # print STDERR "${TOC_FILE} located.\n";
 					my @item_array;
 					my $item_title;
 					my $item_path = "${item}/";
@@ -487,24 +493,33 @@ sub generate_metadata {
 
 # Process driver for page preview generation
 sub process_page_images {
-    # Use the configured IMAGE_DIRECTORY (defaults to "res/img")
-    my $img_dir = $IMAGE_DIRECTORY || "res/img";
+    debug_line("Entering subroutine: process_page_images()");
+    debug_line("Current working directory is '" . cwd() . "'");
+    debug_line("Target image directory is '${IMAGE_DIRECTORY}'");
+    my $img_dir = $IMAGE_DIRECTORY;
+    debug_line("No image directory for this page, skipping...") unless -d $img_dir;
     return unless -d $img_dir;
     
     # Create subdirectories if they don't exist
-    my @subdirs = ("$FULLSIZE_IMAGE_DIRECTORY", "$PREVIEW_DIRECTORY", "$LEGACY_PREVIEW_DIRECTORY");
+    my @subdirs = ($FULLSIZE_IMAGE_DIRECTORY, $PREVIEW_DIRECTORY, $LEGACY_PREVIEW_DIRECTORY);
     foreach my $dir (@subdirs) {
-        mkdir $dir unless -d $dir;
+	debug_line("Check for subdirectory: ${dir}");
+        mkdir($dir) or debug_line("Attempt to create required directory '${dir}' failed: $!") and return
+       		unless -d $dir;
     }
     
-    # Move loose files to full/ and generate previews
+    # Move loose files to fullsized folder and generate previews
+    debug_line("Checking for loose files in '${img_dir}'...");
     opendir(my $dh, $img_dir) or return;
     my @loose_files = grep { 
         -f "$img_dir/$_" && /\.(jpg|jpeg|png|gif|bmp|tiff?)$/i 
     } readdir($dh);
     closedir($dh);
-    
+    debug_line("Found " . scalar @loose_files . " loose file(s).");
+   
+
     foreach my $file (@loose_files) {
+	debug_line("Moving lose file '${file}' to '${FULLSIZE_IMAGE_DIRECTORY}' for processing...");	
         my $source = "$img_dir/$file";
         my $dest = "$FULLSIZE_IMAGE_DIRECTORY/$file";
         
@@ -518,14 +533,17 @@ sub process_page_images {
 # Generate previews in the local image directory using server-side tools
 sub generate_image_previews {
     my ($full_path, $filename) = @_;
+    debug_line("Entering subroutine: generate_image_previews('" . $full_path . "','" . $filename . "')");
     
     # Use configured directories with fallbacks
     my $preview_dir = $PREVIEW_DIRECTORY || "${IMAGE_DIRECTORY}/previews";
     my $legacy_dir = $LEGACY_PREVIEW_DIRECTORY || "${preview_dir}/legacy";
+    debug_line("Preview directories are '${preview_dir}' and '${legacy_dir}'");
     
     # Use configured widths with fallbacks (targeting display resolutions)
     my $preview_width = $PREVIEW_WIDTH || "1024";
     my $legacy_width = $LEGACY_PREVIEW_WIDTH || "600";
+    debug_line("Preview dimensions: x${preview_width} (standard) and x${legacy_width} (legacy)");
     
     # Extract basename and extension
     my ($basename, $ext) = $filename =~ /^(.+)\.([^.]+)$/;
@@ -536,12 +554,16 @@ sub generate_image_previews {
     mkdir $legacy_dir unless -d $legacy_dir;
     
     # Check for image processing tools
+    debug_line("Detecting image processing tools on server...");
     my $has_imagemagick = `which convert 2>/dev/null`;
     my $has_gm = `which gm 2>/dev/null`;
     chomp($has_imagemagick);
     chomp($has_gm);
-    
+    debug_line("Server appears to have ImageMagick installed for preview generation.") if ($has_imagemagick);
+    debug_line("Server appears to have GraphicsMagick installed for preview generation.") if ($has_gm);
+
     # Skip if no tools available
+    debug_line("Host has no tools installed for preview generation. Returning...") unless ($has_imagemagick || $has_gm);
     return unless ($has_imagemagick || $has_gm);
     
     # Determine if image has transparency
@@ -689,8 +711,6 @@ if (handle_api_request()) {
   exit;
 }
 
-# Process image previews, if applicable
-process_page_images(); 
 
 # If HTML body file exists, override all content
 if (-f $BODY_FILE) {
@@ -717,6 +737,9 @@ if (-f $BODY_FILE) {
 	$_NSI_CONTENT .= page_toc();
 }
 
+# Process image previews, if applicable
+process_page_images(); 
+
 # Add header and footer
 
 if (!$_NSI_CONTENT) {
@@ -732,6 +755,7 @@ if (!$_NSI_CONTENT) {
 }
 
 $_NSI_CONTENT = "<!-- BEGIN CONTENT -->\n" . $_NSI_CONTENT;
+$_NSI_CONTENT .= preformat_text($_DEBUG_TRACE_LINES);
 $_NSI_CONTENT .= "<!-- END OF CONTENT -->\n";
 
 $_NSI_PAGE     = "Content-type: text/html\n\n";

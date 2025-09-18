@@ -40,6 +40,7 @@ $LINE_FRAME_R         = " ]";
 # Landing page preferences						landing	
 # -----------------------------------------------------------------------------
 $SYSTEM_STATUS = 1; # Show system status report referenced by $STATUS_COMMAND
+$DEBUG_TRACE   = 0; # Show a debug trace below the footer, for developers
 # -----------------------------------------------------------------------------
 # Metadata                                                             metadata
 # -----------------------------------------------------------------------------
@@ -56,6 +57,7 @@ $PREVIEW_DIRECTORY         = "${IMAGE_DIRECTORY}/previews";
 $LEGACY_PREVIEW_DIRECTORY  = "${PREVIEW_DIRECTORY}/legacy";
 $MEDITATION_DIRECTORY      = "${IMAGE_DIRECTORY}/meditations";
 $SITE_RESOURCE_DIRECTORY   = "/res";
+$SITE_SYSRES_DIRECTORY     = "${SITE_RESOURCE_DIRECTORY}/sys";
 $SITE_IMAGE_DIRECTORY      = "${SITE_RESOURCE_DIRECTORY}/img";
 $SITE_STYLE_DIRECTORY      = "${SITE_RESOURCE_DIRECTORY}/style";
 $SITE_MEDITATION_DIRECTORY = "${SITE_IMAGE_DIRECTORY}/meditations";
@@ -78,8 +80,8 @@ $TOC_FILE = ".info";
 # -----------------------------------------------------------------------------
 # Resources                                                           resources
 # -----------------------------------------------------------------------------
-$FAVICON              = "${SITE_IMAGE_DIRECTORY}/favicon.ico";
-$LOGO                 = "${SITE_IMAGE_DIRECTORY}/logo.gif";
+$FAVICON              = "${SITE_SYSRES_DIRECTORY}/favicon.ico";
+$LOGO                 = "${SITE_SYSRES_DIRECTORY}/logo.gif";
 $MAIN_STYLESHEET      = "${SITE_STYLE_DIRECTORY}/style.css"; 
 $LEGACY_STYLESHEET    = "${SITE_STYLE_DIRECTORY}/legacy.css"; 
 $MEDITATION_FILETYPES = ".gif|.jpg|.png";

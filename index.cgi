@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- # 
-my $version = '2.4.0';
+my $version = '2.4.2';
 # --------------------------------------------------------------------------- #
 
 $_SITE_ROOT     = $ENV{DOCUMENT_ROOT} . "/";
@@ -530,7 +530,7 @@ sub generate_image_previews {
     # Extract basename and extension
     my ($basename, $ext) = $filename =~ /^(.+)\.([^.]+)$/;
     return unless $basename;
-    
+   
     # Create preview directories if they don't exist
     mkdir $preview_dir unless -d $preview_dir;
     mkdir $legacy_dir unless -d $legacy_dir;
@@ -688,6 +688,9 @@ my $_NSI_CONTENT;
 if (handle_api_request()) {
   exit;
 }
+
+# Process image previews, if applicable
+process_page_images(); 
 
 # If HTML body file exists, override all content
 if (-f $BODY_FILE) {

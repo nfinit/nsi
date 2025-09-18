@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- # 
-my $version = '2.5.0';
+my $version = '2.6.0';
 # --------------------------------------------------------------------------- #
 
 $_SITE_ROOT     = $ENV{DOCUMENT_ROOT} . "/";
@@ -55,6 +55,11 @@ $HOSTNAME $ORGANIZATION $SITE_NAME
 $DEBUG_TRACE
 
 );
+# Set run mode -------------------------------------------------------------- #
+my $_WWW_EXEC;
+my $_INTERACTIVE;
+$_WWW_EXEC = 1 if ($ENV{GATEWAY_INTERFACE} || $ENV{REQUEST_METHOD});
+$_INTERACTIVE = 1 if (!$_WWW_EXEC) and (-t STDERR);
 # Configuration processing -------------------------------------------------- #
 if (-f $_SITE_CONFIG && !do $_SITE_CONFIG) { $SITE_CONFIG_ERRORS++; }
 $SITE_ERROR_TEXT .= $@ if ($SITE_CONFIG_ERRORS);
@@ -110,12 +115,21 @@ sub debug_line {
 	my $line = shift @_;
 	return if (!$DEBUG_TRACE);
 	return if (!$line);
-	$_DEBUG_TRACE_LINES .= "[" . time . "] ${line}\n";
+	$trace_line = "[" . time . "] ${line}\n";
+  if ($_INTERACTIVE) {
+	  print STDERR $trace_line;
+  } else {
+	  $_DEBUG_TRACE_LINES .= $trace_line;
+  } 
 	return;
 }
+$DEBUG_TRACE=1 if ($_INTERACTIVE);
 debug_line("*** DEBUG TRACE ***");
 debug_line("NSI ${version}");
-debug_line("uid=$>, gids=$)");
+debug_line("uid: $>");
+debug_line("gids: $)");
+debug_line("Current working directory is '" . cwd() . "'");
+debug_line("Running in interactive mode.") if ($_INTERACTIVE);
 debug_line("API is enabled.") if ($API_ENABLED);
 debug_line("Query string: $ENV{'QUERY_STRING'}") if ($ENV{'QUERY_STRING'});
 # Generic dynamic content subroutines --------------------------------------- #
@@ -497,7 +511,6 @@ sub generate_metadata {
 # Process driver for page preview generation
 sub process_page_images {
     debug_line("Entering subroutine: process_page_images()");
-    debug_line("Current working directory is '" . cwd() . "'");
     debug_line("Target image directory is '${IMAGE_DIRECTORY}'");
     my $img_dir = $IMAGE_DIRECTORY;
     debug_line("No image directory for this page, skipping...") unless -d $img_dir;
@@ -707,6 +720,11 @@ sub handle_api_request {
 
 # Content generation -------------------------------------------------------- #
 my $_NSI_CONTENT;
+
+# Handle arguments when called interactively or from cron 
+if (!$_WWW_EXEC) {
+  
+}
 
 # Check for API requests first
 if (handle_api_request()) {

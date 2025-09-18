@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- # 
-my $version = '2.4.5';
+my $version = '2.5.0';
 # --------------------------------------------------------------------------- #
 
 $_SITE_ROOT     = $ENV{DOCUMENT_ROOT} . "/";
@@ -114,8 +114,10 @@ sub debug_line {
 	return;
 }
 debug_line("*** DEBUG TRACE ***");
+debug_line("NSI ${version}");
 debug_line("uid=$>, gids=$)");
-
+debug_line("API is enabled.") if ($API_ENABLED);
+debug_line("Query string: $ENV{'QUERY_STRING'}") if ($ENV{'QUERY_STRING'});
 # Generic dynamic content subroutines --------------------------------------- #
 
 # Automatic content rule
@@ -421,6 +423,7 @@ sub page_footer {
 # Landing page dynamic content subroutines ---------------------------------- #
 
 sub status_report {
+    	debug_line("Entering subroutine: status_report()");
 	return if (!$SYSTEM_STATUS);
 	my $command_output;
 	my $report = auto_hr . "<H2>Live system status</H2>\n";
@@ -636,7 +639,6 @@ sub random_image_recursive {
     opendir(my $dh, $current_dir) or return; # Skip if can't open
     my @entries = grep { !/^\.\.?$/ } readdir($dh);
     closedir($dh);
-    
     foreach my $entry (@entries) {
       my $path = "$current_dir/$entry";
       if (-d $path) {

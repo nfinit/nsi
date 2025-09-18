@@ -14,6 +14,7 @@ $CURRENT_TIME = `date`;
 # -----------------------------------------------------------------------------
 $ORGANIZATION = "NFINIT labs";
 $SITE_NAME    = "NSI Development Repository"; 
+$API_ENABLED  = 1;
 # -----------------------------------------------------------------------------
 # Display preferences							display
 # -----------------------------------------------------------------------------
@@ -47,13 +48,16 @@ $CLOUDFLARE   = 1; # Set to 1 if this system is proxied by Cloudflare
 # -----------------------------------------------------------------------------
 # Resource paths                                                      resources
 # -----------------------------------------------------------------------------
-$RESOURCE_DIRECTORY      = "res";
-$STYLE_DIRECTORY         = "${RESOURCE_DIRECTORY}/style";
-$IMAGE_DIRECTORY         = "${RESOURCE_DIRECTORY}/img";
-$MEDITATION_DIRECTORY    = "${IMAGE_DIRECTORY}/meditations";
-$SITE_RESOURCE_DIRECTORY = "/res";
-$SITE_IMAGE_DIRECTORY    = "${SITE_RESOURCE_DIRECTORY}/img";
-$SITE_STYLE_DIRECTORY    = "${SITE_RESOURCE_DIRECTORY}/style";
+$RESOURCE_DIRECTORY        = "res";
+$STYLE_DIRECTORY           = "${RESOURCE_DIRECTORY}/style";
+$IMAGE_DIRECTORY           = "${RESOURCE_DIRECTORY}/img";
+$FULLSIZE_IMAGE_DIRECTORY  = "${IMAGE_DIRECTORY}/full";
+$PREVIEW_DIRECTORY         = "${IMAGE_DIRECTORY}/previews";
+$LEGACY_PREVIEW_DIRECTORY  = "${PREVIEW_DIRECTORY}/legacy";
+$MEDITATION_DIRECTORY      = "${IMAGE_DIRECTORY}/meditations";
+$SITE_RESOURCE_DIRECTORY   = "/res";
+$SITE_IMAGE_DIRECTORY      = "${SITE_RESOURCE_DIRECTORY}/img";
+$SITE_STYLE_DIRECTORY      = "${SITE_RESOURCE_DIRECTORY}/style";
 $SITE_MEDITATION_DIRECTORY = "${SITE_IMAGE_DIRECTORY}/meditations";
 # -----------------------------------------------------------------------------
 # HTML includes                                                        includes 
@@ -79,5 +83,7 @@ $LOGO                 = "${SITE_IMAGE_DIRECTORY}/logo.gif";
 $MAIN_STYLESHEET      = "${SITE_STYLE_DIRECTORY}/style.css"; 
 $LEGACY_STYLESHEET    = "${SITE_STYLE_DIRECTORY}/legacy.css"; 
 $MEDITATION_FILETYPES = ".gif|.jpg|.png";
+$PREVIEW_WIDTH        = "1024";
+$LEGACY_PREVIEW_WIDTH = "600";
 # -----------------------------------------------------------------------------
 1 # Expression must be evaluated to pass load check

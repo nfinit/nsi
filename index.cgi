@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- # 
-my $version = '2.3.2';
+my $version = '2.4.0';
 # --------------------------------------------------------------------------- #
 
 $_SITE_ROOT     = $ENV{DOCUMENT_ROOT} . "/";
@@ -40,6 +40,8 @@ $LOGO $FAVICON
 
 $IMAGE_DIRECTORY $API_IMAGE_DIRECTORY $PREVIEW_DIRECTORY 
 $LEGACY_PREVIEW_DIRECTORY
+
+$PREVIEW_WIDTH $LEGACY_PREVIEW_WIDTH
 
 $MEDITATION_DIRECTORY $MEDITATION_FILETYPES
 
@@ -479,6 +481,109 @@ sub generate_metadata {
   $metadata .= "<META NAME=\"keywords\" CONTENT=\"${META_KEYWORDS}\">\n"
                if ($META_KEYWORDS);
   return($metadata);
+}
+
+# Media subroutines --------------------------------------------------------- #
+
+# Process driver for page preview generation
+sub process_page_images {
+    # Use the configured IMAGE_DIRECTORY (defaults to "res/img")
+    my $img_dir = $IMAGE_DIRECTORY || "res/img";
+    return unless -d $img_dir;
+    
+    # Create subdirectories if they don't exist
+    my @subdirs = ("$FULLSIZE_IMAGE_DIRECTORY", "$PREVIEW_DIRECTORY", "$LEGACY_PREVIEW_DIRECTORY");
+    foreach my $dir (@subdirs) {
+        mkdir $dir unless -d $dir;
+    }
+    
+    # Move loose files to full/ and generate previews
+    opendir(my $dh, $img_dir) or return;
+    my @loose_files = grep { 
+        -f "$img_dir/$_" && /\.(jpg|jpeg|png|gif|bmp|tiff?)$/i 
+    } readdir($dh);
+    closedir($dh);
+    
+    foreach my $file (@loose_files) {
+        my $source = "$img_dir/$file";
+        my $dest = "$FULLSIZE_IMAGE_DIRECTORY/$file";
+        
+        # Move to fullsize directory if not already there
+        if (rename($source, $dest)) {
+            generate_image_previews($dest, $file);
+        }
+    }
+}
+
+# Generate previews in the local image directory using server-side tools
+sub generate_image_previews {
+    my ($full_path, $filename) = @_;
+    
+    # Use configured directories with fallbacks
+    my $preview_dir = $PREVIEW_DIRECTORY || "${IMAGE_DIRECTORY}/previews";
+    my $legacy_dir = $LEGACY_PREVIEW_DIRECTORY || "${preview_dir}/legacy";
+    
+    # Use configured widths with fallbacks (targeting display resolutions)
+    my $preview_width = $PREVIEW_WIDTH || "1024";
+    my $legacy_width = $LEGACY_PREVIEW_WIDTH || "600";
+    
+    # Extract basename and extension
+    my ($basename, $ext) = $filename =~ /^(.+)\.([^.]+)$/;
+    return unless $basename;
+    
+    # Create preview directories if they don't exist
+    mkdir $preview_dir unless -d $preview_dir;
+    mkdir $legacy_dir unless -d $legacy_dir;
+    
+    # Check for image processing tools
+    my $has_imagemagick = `which convert 2>/dev/null`;
+    my $has_gm = `which gm 2>/dev/null`;
+    chomp($has_imagemagick);
+    chomp($has_gm);
+    
+    # Skip if no tools available
+    return unless ($has_imagemagick || $has_gm);
+    
+    # Determine if image has transparency
+    my $has_transparency = 0;
+    if ($has_imagemagick) {
+        my $check = `convert '$full_path' -format "%[opaque]" info: 2>/dev/null`;
+        chomp($check);
+        $has_transparency = ($check eq "False");
+    } elsif ($has_gm) {
+        # Simple assumption for GM
+        $has_transparency = $ext =~ /^(png|gif)$/i;
+    }
+    
+    # Generate standard preview (width-constrained only)
+    my $preview_ext = $has_transparency ? "png" : "jpg";
+    my $preview_path = "$preview_dir/${basename}.${preview_ext}";
+    
+    unless (-f $preview_path) {
+        if ($has_imagemagick) {
+            my $quality = $has_transparency ? "" : "-quality 85";
+            # Use width constraint only, height scales proportionally
+            system("convert '$full_path' -resize '${preview_width}>' $quality '$preview_path' 2>/dev/null");
+        } elsif ($has_gm) {
+            my $quality = $has_transparency ? "" : "-quality 85";
+            system("gm convert '$full_path' -resize '${preview_width}>' $quality '$preview_path' 2>/dev/null");
+        }
+    }
+    
+    # Generate legacy GIF preview (width-constrained for 640x480 displays)
+    my $legacy_path = "$legacy_dir/${basename}.gif";
+    
+    unless (-f $legacy_path) {
+        if ($has_imagemagick) {
+            # Web-safe colors for old displays, width-based sizing
+            system("convert '$full_path' -resize '${legacy_width}>' " .
+                   "-dither FloydSteinberg -colors 216 " .
+                   "'$legacy_path' 2>/dev/null");
+        } elsif ($has_gm) {
+            system("gm convert '$full_path' -resize '${legacy_width}>' " .
+                   "-dither -colors 216 '$legacy_path' 2>/dev/null");
+        }
+    }
 }
 
 # Get random image and return the file path

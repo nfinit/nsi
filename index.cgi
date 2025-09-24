@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- # 
-my $version = '2.7.0';
+my $version = '2.7.1';
 # --------------------------------------------------------------------------- #
 
 $_SITE_CONFIG_NAME = "res/config.pl";
@@ -290,6 +290,7 @@ sub tree_toc {
 			}
 		}
 	}
+	@TOC = sort { $a->[0] cmp $b->[0] } @TOC;
 	return (@TOC);
 }
 

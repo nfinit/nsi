@@ -1,10 +1,9 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- # 
-my $version = '2.6.0';
+my $version = '2.7.0';
 # --------------------------------------------------------------------------- #
 
-$_SITE_ROOT     = $ENV{DOCUMENT_ROOT} . "/";
-$_SITE_CONFIG  = $_SITE_ROOT . "res/config.pl";
+$_SITE_CONFIG_NAME = "res/config.pl";
 $_LOCAL_CONFIG = "./.config.pl";
 
 # DO NOT EDIT ANYTHING BELOW THIS LINE
@@ -61,6 +60,21 @@ my $_INTERACTIVE;
 $_WWW_EXEC = 1 if ($ENV{GATEWAY_INTERFACE} || $ENV{REQUEST_METHOD});
 $_INTERACTIVE = 1 if (!$_WWW_EXEC) and (-t STDERR);
 # Configuration processing -------------------------------------------------- #
+my $search_path = cwd();
+while ($search_path ne '/') {
+    my $potential_config = "$search_path/$_SITE_CONFIG_NAME";
+    if (-f $potential_config) {
+        $_SITE_CONFIG = $potential_config;
+        last;
+    }
+    $search_path = dirname($search_path);
+}
+
+if (!$_SITE_CONFIG) {
+    $SITE_CONFIG_ERRORS++;
+    $SITE_ERROR_TEXT = "Site configuration file ($_SITE_CONFIG_NAME) not found in any parent directory.";
+}
+
 if (-f $_SITE_CONFIG && !do $_SITE_CONFIG) { $SITE_CONFIG_ERRORS++; }
 $SITE_ERROR_TEXT .= $@ if ($SITE_CONFIG_ERRORS);
 if (-f $_LOCAL_CONFIG && !do $_LOCAL_CONFIG) { $LOCAL_CONFIG_ERRORS++; }
@@ -794,19 +808,27 @@ HELP
     }
   }
   
-  # Reload configuration with new paths (Workaround #3: Force config reload)
-  # We need to re-process configs since we may have changed paths
-  $_SITE_ROOT = $ENV{DOCUMENT_ROOT} . "/";
-  $_SITE_CONFIG = $_SITE_ROOT . "res/config.pl" unless $cli_config;
+    # Reload configuration with new paths (Workaround #3: Force config reload)
+    # We need to re-process configs since we may have changed paths
+    unless ($cli_config) {
+      my $search_path = cwd();
+      while ($search_path ne '/') {
+          my $potential_config = "$search_path/$_SITE_CONFIG_NAME";
+          if (-f $potential_config) {
+              $_SITE_CONFIG = $potential_config;
+              last;
+          }
+          $search_path = dirname($search_path);
+      }
+    }
   
-  # Process configuration files again with correct paths
-  if (-f $_SITE_CONFIG && !do $_SITE_CONFIG) { 
-    die "Error loading site configuration: $@\n";
-  }
-  if (-f $_LOCAL_CONFIG && !do $_LOCAL_CONFIG) {
-    warn "Warning: Error loading local configuration: $@\n";
-  }
-  
+    # Process configuration files again with correct paths
+    if (-f $_SITE_CONFIG && !do $_SITE_CONFIG) { 
+      die "Error loading site configuration: $@\n";
+    }
+    if (-f $_LOCAL_CONFIG && !do $_LOCAL_CONFIG) {
+      warn "Warning: Error loading local configuration: $@\n";
+    }  
   # Handle image processing request
   if ($cli_process_images) {
     my $target = $cli_target_dir || cwd();

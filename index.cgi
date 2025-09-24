@@ -123,7 +123,6 @@ sub debug_line {
   } 
 	return;
 }
-$DEBUG_TRACE=1 if ($_INTERACTIVE);
 debug_line("*** DEBUG TRACE ***");
 debug_line("NSI ${version}");
 debug_line("uid: $>");
@@ -723,7 +722,121 @@ my $_NSI_CONTENT;
 
 # Handle arguments when called interactively or from cron 
 if (!$_WWW_EXEC) {
+  use Getopt::Long;
   
+  # Set up command line options
+  my $cli_config;
+  my $cli_root;
+  my $cli_process_images;
+  my $cli_target_dir;
+  my $cli_help;
+  my $cli_verbose;
+  
+  GetOptions(
+    'config=s'         => \$cli_config,
+    'root=s'           => \$cli_root,
+    'process-images'   => \$cli_process_images,
+    'target=s'         => \$cli_target_dir,
+    'verbose'          => \$cli_verbose,
+    'help'             => \$cli_help
+  ) or die "Error in command line arguments. Use --help for usage.\n";
+  
+  # Enable debug trace if verbose mode requested
+  $DEBUG_TRACE = 1 if $cli_verbose;
+  
+  # Display help if requested
+  if ($cli_help) {
+    print <<'HELP';
+NSI Command Line Interface
+--------------------------
+Usage: index.cgi [OPTIONS]
+
+Options:
+  --config=FILE        Specify configuration file path
+  --root=PATH          Set document root (required without CGI environment)
+  --process-images     Process images in target directory
+  --target=PATH        Target directory for operations (default: current)
+  --verbose            Enable debug output
+  --help               Show this help message
+
+Examples:
+  # Process images in current directory
+  ./index.cgi --config=/var/www/res/config.pl --root=/var/www --process-images
+  
+  # Process images in specific directory
+  ./index.cgi --config=/var/www/res/config.pl --root=/var/www --process-images --target=/var/www/gallery
+  
+  # Run with verbose output for troubleshooting
+  ./index.cgi --config=/var/www/res/config.pl --root=/var/www --process-images --verbose
+HELP
+    exit 0;
+  }
+  
+  # Set document root if provided (Workaround #1: Manual environment setup)
+  if ($cli_root) {
+    $ENV{DOCUMENT_ROOT} = $cli_root;
+    $ENV{DOCUMENT_ROOT} =~ s/\/$//;  # Remove trailing slash for consistency
+    debug_line("Document root set to: $ENV{DOCUMENT_ROOT}");
+  } elsif (!$ENV{DOCUMENT_ROOT}) {
+    # Try to use current directory as fallback if no root specified
+    # (Workaround #2: Fallback to pwd when no root provided)
+    $ENV{DOCUMENT_ROOT} = cwd();
+    debug_line("Warning: No document root specified, using current directory: $ENV{DOCUMENT_ROOT}");
+  }
+  
+  # Override config file path if specified
+  if ($cli_config) {
+    if (-f $cli_config) {
+      $_SITE_CONFIG = $cli_config;
+      debug_line("Using specified config file: $_SITE_CONFIG");
+    } else {
+      die "Error: Specified config file does not exist: $cli_config\n";
+    }
+  }
+  
+  # Reload configuration with new paths (Workaround #3: Force config reload)
+  # We need to re-process configs since we may have changed paths
+  $_SITE_ROOT = $ENV{DOCUMENT_ROOT} . "/";
+  $_SITE_CONFIG = $_SITE_ROOT . "res/config.pl" unless $cli_config;
+  
+  # Process configuration files again with correct paths
+  if (-f $_SITE_CONFIG && !do $_SITE_CONFIG) { 
+    die "Error loading site configuration: $@\n";
+  }
+  if (-f $_LOCAL_CONFIG && !do $_LOCAL_CONFIG) {
+    warn "Warning: Error loading local configuration: $@\n";
+  }
+  
+  # Handle image processing request
+  if ($cli_process_images) {
+    my $target = $cli_target_dir || cwd();
+    
+    # Change to target directory for processing
+    # (Workaround #4: Temporary directory change for context-dependent operations)
+    my $original_dir = cwd();
+    chdir($target) or die "Cannot change to target directory: $target\n";
+    
+    print "Processing images in: $target\n";
+    debug_line("Starting image processing in: $target");
+    
+    # Set up image directory paths relative to current location
+    $IMAGE_DIRECTORY = "./res/img" unless $IMAGE_DIRECTORY;
+    $FULLSIZE_IMAGE_DIRECTORY = "${IMAGE_DIRECTORY}/full" unless $FULLSIZE_IMAGE_DIRECTORY;
+    $PREVIEW_DIRECTORY = "${IMAGE_DIRECTORY}/previews" unless $PREVIEW_DIRECTORY;
+    $LEGACY_PREVIEW_DIRECTORY = "${PREVIEW_DIRECTORY}/legacy" unless $LEGACY_PREVIEW_DIRECTORY;
+    
+    # Call the image processing function
+    process_page_images();
+    
+    # Return to original directory
+    chdir($original_dir);
+    
+    print "Image processing complete.\n";
+    debug_line("Image processing completed");
+  }
+  
+  # Exit after CLI operations (don't generate HTML output)
+  exit 0;
 }
 
 # Check for API requests first

@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- #
-my $version = '2.9.3';
+my $version = '2.9.6';
 # --------------------------------------------------------------------------- #
 
 $_SITE_CONFIG_NAME = "res/config.pl";
@@ -8,7 +8,7 @@ $_LOCAL_CONFIG = "./.config.pl";
 
 # DO NOT EDIT ANYTHING BELOW THIS LINE
 # =========================================================================== #
-use Cwd;
+use Cwd qw(cwd abs_path);
 use File::Basename;
 use Time::HiRes qw(time);
 # --------------------------------------------------------------------------- #
@@ -242,6 +242,76 @@ sub process_body_fragments {
 	return $fragment_content;
 }
 
+sub get_logical_cwd {
+	# Get current working directory preserving symlink semantics
+	# For web requests, construct from SCRIPT_NAME to preserve logical path
+	# For CLI, use physical cwd()
+
+	if ($ENV{SCRIPT_NAME}) {
+		# Extract directory from script path (e.g., /galleries/travel/index.cgi -> /galleries/travel)
+		my $script_dir = $ENV{SCRIPT_NAME};
+		$script_dir =~ s/\/[^\/]+$//;  # Remove /index.cgi or script name
+		$script_dir = "/" if (!$script_dir);  # Handle root case
+
+		# Construct absolute filesystem path
+		return $ENV{DOCUMENT_ROOT} . $script_dir;
+	}
+
+	# Fallback to physical path for non-web contexts
+	return cwd();
+}
+
+sub get_parent_title {
+	# For web requests, use SCRIPT_NAME to get logical parent path
+	# (preserves symlink semantics by using URL path instead of filesystem)
+	my $parent_dir;
+
+	if ($ENV{SCRIPT_NAME}) {
+		# Extract directory from script path (e.g., /galleries/travel/index.cgi -> /galleries/travel)
+		my $script_dir = $ENV{SCRIPT_NAME};
+		$script_dir =~ s/\/[^\/]+$//;  # Remove /index.cgi
+
+		# Get parent directory from URL path
+		if ($script_dir =~ m|^(.*)/[^/]+$|) {
+			my $parent_url_path = $1;
+			$parent_url_path = "/" if (!$parent_url_path);  # Handle root case
+
+			# Construct absolute filesystem path to parent
+			$parent_dir = $ENV{DOCUMENT_ROOT} . $parent_url_path;
+		}
+	}
+
+	# Fallback to relative path for non-web contexts
+	if (!$parent_dir) {
+		$parent_dir = "..";
+	}
+
+	# Try reading .title file from parent
+	my $parent_title_file = "${parent_dir}/${TITLE_FILE}";
+	if (-f $parent_title_file) {
+		if (open(my $fh, '<', $parent_title_file)) {
+			my $title = <$fh>;
+			close($fh);
+			chomp($title) if ($title);
+			return $title if ($title);
+		}
+	}
+
+	# Try reading .info file from parent (line 1)
+	my $parent_info_file = "${parent_dir}/${TOC_FILE}";
+	if (-f $parent_info_file) {
+		if (open(my $fh, '<', $parent_info_file)) {
+			my $title = <$fh>;
+			close($fh);
+			chomp($title) if ($title);
+			return $title if ($title);
+		}
+	}
+
+	# Fallback to ".."
+	return "..";
+}
+
 sub get_page_title {
   my $title = "";
   if ($BODY_FILE) {
@@ -274,7 +344,7 @@ sub get_page_title {
 sub page_title {
   my $title = get_page_title();
   return if (!$title);
-  $title = "<H1><STRONG>${title}</STRONG></H1>" if ($title);
+  $title = "<H1><B>${title}</B></H1>" if ($title);
   if ($LOGO && (cwd() eq $ENV{DOCUMENT_ROOT} 
       || (cwd() ne $ENV{DOCUMENT_ROOT} 
       && $SUB_LOGO))) {
@@ -478,7 +548,7 @@ sub cwd_nested_in {
 	my $target_directory = shift; # Get first argument
 	return if !$target_directory;
   $target_directory =~ /\/$/;
-  my $current_directory = cwd();
+  my $current_directory = get_logical_cwd();
   $current_directory =~ /\/$/;
   $current_directory =~ s/^$ENV{DOCUMENT_ROOT}//;
   $target_directory  =~ s/^$ENV{DOCUMENT_ROOT}//;
@@ -487,7 +557,7 @@ sub cwd_nested_in {
 
 sub navigation_menu {
   return if (!$NAVIGATION_MENU);
-	return if (!$ROOT_NAVIGATION && cwd() eq $ENV{DOCUMENT_ROOT});
+	return if (!$ROOT_NAVIGATION && get_logical_cwd() eq $ENV{DOCUMENT_ROOT});
   my $menu;
   my @menu_items;
   if ($TOC_NAV) {
@@ -497,7 +567,7 @@ sub navigation_menu {
       $toc_target = $ENV{DOCUMENT_ROOT};
       $toc_target =~ /\/$/;
     } else {
-      $toc_target = cwd();
+      $toc_target = get_logical_cwd();
       $toc_target =~ /\/$/;
       $toc_target = dirname($toc_target);
     }
@@ -514,15 +584,15 @@ sub navigation_menu {
       next if (!$item_path);
       $item_count++;
       $list_item .= "${item_name}";
-      if ("$ENV{DOCUMENT_ROOT}${item_path}" eq cwd() . '/') {
-        $list_item = "<EM>${list_item}</EM>";
+      if ("$ENV{DOCUMENT_ROOT}${item_path}" eq get_logical_cwd() . '/') {
+        $list_item = "<I>${list_item}</I>";
       } elsif (cwd_nested_in($item_path) && ($item_path ne '/')) {
-        #$list_item = "<EM>${list_item}</EM>";
-        $list_item = "<STRONG><A HREF=\"${item_path}\">${list_item}</A></STRONG>";
+        #$list_item = "<I>${list_item}</I>";
+        $list_item = "<B><A HREF=\"${item_path}\">${list_item}</A></B>";
       } else {
         $list_item = "<A HREF=\"${item_path}\">${list_item}</A>";
-      } 
-		  $list_item = $LINE_ELEMENT_DIVIDER . $list_item 
+      }
+		  $list_item = $LINE_ELEMENT_DIVIDER . $list_item
         if ($LINE_ELEMENTS && $item_count > 1);
       $list_item = "<SPAN CLASS=\"navigation_item\">${list_item}</SPAN>\n";
       $menu .= $list_item;
@@ -530,7 +600,7 @@ sub navigation_menu {
   }
   $menu = auto_hr() . $menu;
   $menu = "<DIV ID=\"navigation\" CLASS=\"no_print\">\n${menu}</DIV>\n";
-  return ($menu); 
+  return ($menu);
 }
 
 # Footer subroutines -------------------------------------------------------- #
@@ -551,15 +621,29 @@ sub page_footer {
 	$footer_left = "<TD ALIGN=\"LEFT\">${footer_left}</TD>\n";
 	$footer_row .= $footer_left;
 	# Content in the RIGHT ALIGNED block
-	if ($FOOTER_NAV && cwd() ne $ENV{DOCUMENT_ROOT}) {
+	if ($FOOTER_NAV && get_logical_cwd() ne $ENV{DOCUMENT_ROOT}) {
 		my $footer_nav;
+		# Check if parent is root using logical path
+		my $parent_is_root = (abs_path("..") eq abs_path($ENV{DOCUMENT_ROOT}));
+
 		$footer_nav .= "<SPAN CLASS=\"footer_navigation no_print\">\n";
 		$footer_nav .= $LINE_FRAME_L if ($LINE_ELEMENTS);
-		$footer_nav .= "<A HREF=\"..\">Up</A>\n";
-    if ($NAVIGATION_MENU && $NAV_POSITION >= 0) {
-		  $footer_nav .= $LINE_ELEMENT_DIVIDER if ($LINE_ELEMENTS);
-		  $footer_nav .= "<A HREF=\"/\">Home</A>\n";
-    }
+
+		# Only show parent link if parent is not the root
+		if (!$parent_is_root) {
+			my $parent_title = get_parent_title();
+			$footer_nav .= "<A HREF=\"..\">${parent_title}</A>\n";
+			# Add divider before Home link if needed
+			if ($NAVIGATION_MENU && $NAV_POSITION >= 0) {
+				$footer_nav .= $LINE_ELEMENT_DIVIDER if ($LINE_ELEMENTS);
+			}
+		}
+
+		# Show Home link if navigation menu is enabled
+		if ($NAVIGATION_MENU && $NAV_POSITION >= 0) {
+			$footer_nav .= "<A HREF=\"/\">Home</A>\n";
+		}
+
 		$footer_nav .= $LINE_FRAME_R if ($LINE_ELEMENTS);
 		$footer_nav .= "</SPAN>\n";
 		$footer_right .= $footer_nav;
@@ -1040,7 +1124,7 @@ process_page_images();
 # Add header and footer
 
 if (!$_NSI_CONTENT) {
-	$_NSI_CONTENT = "<EM>This page intentionally left blank</EM>";
+	$_NSI_CONTENT = "<I>This page intentionally left blank</I>";
 	$_NSI_CONTENT = "<CENTER>${_NSI_CONTENT}</CENTER>\n";
 } else {
   $_NSI_PREFORMAT  = page_title();

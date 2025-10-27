@@ -27,8 +27,11 @@ $NAV_POSITION    =  1; # Site navigation position (top: 1, bottom: -1, none: 0)
 $FOOTER_NAV      =  1; # Enable navigation controls in the page footer
 $CENTER_TITLE    =  0; # Force center page title
 $AUTO_RULE       =  1; # Draw rule separators between dynamic components
-$LIST_UL         =  1; # Bullet tables of contents and other dynamic lists 
+$LIST_UL         =  1; # Bullet tables of contents and other dynamic lists
 $SUB_LOGO        =  0; # Show site logo on subpage titles
+$WRAP_SCRIPT_OUTPUT = 0; # Wrap executable script output in <pre> tags
+                         # Scripts can override with "# WRAP" or "# NO WRAP"
+                         # as a comment on line 2 (after shebang)
 # -----------------------------------------------------------------------------
 # Display elements							display
 # -----------------------------------------------------------------------------
@@ -66,7 +69,13 @@ $SITE_MEDITATION_DIRECTORY = "${SITE_IMAGE_DIRECTORY}/meditations";
 # -----------------------------------------------------------------------------
 $TITLE_FILE = ".title";
 $INTRO_FILE = ".intro";
-$BODY_FILE  = "body.html";
+$BODY_FILE  = "body.html";  # Single body file
+                            # body/ directory for multi-fragment content:
+                            # - Fragments processed in alphabetical order
+                            # - Executable files are run, output included
+                            # - Non-executable files read as HTML fragments
+                            # - If both body.html and body/ exist, body.html
+                            #   content is rendered first, then fragments
 $GROUP_FILE = ".group";
 # -----------------------------------------------------------------------------
 # System scripts                                                        scripts 
@@ -80,6 +89,7 @@ $TREE_TOC = 1; # Generate TOC using the filesystem
 $TOC_FILE = ".info";
 $TOC_TITLE    = ""; # Optional heading displayed above table of contents
 $TOC_SUBTITLE = ""; # Optional subtitle/description below TOC title
+$APPEND_TOC_TO_BODY = 1; # Append TOC after body content (for pages with both)
 # -----------------------------------------------------------------------------
 # Resources                                                           resources
 # -----------------------------------------------------------------------------

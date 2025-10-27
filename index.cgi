@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- #
-my $version = '2.8.0';
+my $version = '2.9.3';
 # --------------------------------------------------------------------------- #
 
 $_SITE_CONFIG_NAME = "res/config.pl";
@@ -30,11 +30,13 @@ $DYNAMIC_LANDING
 
 $HTML_DOCTYPE $CLOUDFLARE
 
-$NAVIGATION_MENU $ROOT_NAVIGATION $TOC_NAV $ROOT_TOC_NAV $NAV_POSITION
+$NAVIGATION_MENU $ROOT_NAVIGATION $TOC_NAV $ROOT_TOC_NAV $NAV_POSITION $FOOTER_NAV
 
-$CENTER_TITLE $AUTO_RULE $SUB_LOGO $TREE_TOC
+$CENTER_TITLE $AUTO_RULE $SUB_LOGO $TREE_TOC $LIST_UL $WRAP_SCRIPT_OUTPUT
 
-$BODY_FILE $TITLE_FILE $INTRO_FILE $TOC_FILE
+$SHOW_TOC $TOC_TITLE $TOC_SUBTITLE $APPEND_TOC_TO_BODY
+
+$BODY_FILE $TITLE_FILE $INTRO_FILE $TOC_FILE $GROUP_FILE
 
 $LOGO $FAVICON
 
@@ -182,7 +184,62 @@ sub strip_body_file_title {
 	open (my $body_data,"<",$BODY_FILE) or die $!;
 	my @body_full = <$body_data>;
 	my @body_lines = grep(!/<h1 id="title">/, @body_full);
-	return(join("\n",@body_lines));	
+	return(join("\n",@body_lines));
+}
+
+sub process_body_fragments {
+	my $body_dir = "body";
+	return "" if (! -d $body_dir);
+
+	my $fragment_content = "";
+
+	# Open directory and get all files (not subdirectories)
+	opendir(my $body_dh, $body_dir) or return "";
+	my @fragments = grep { -f "$body_dir/$_" && $_ !~ /^\./ } readdir($body_dh);
+	closedir($body_dh);
+
+	# Sort alphabetically (numeric prefixes like 01-, 02- will sort naturally)
+	@fragments = sort @fragments;
+
+	foreach my $fragment (@fragments) {
+		my $fragment_path = "$body_dir/$fragment";
+
+		# Check if fragment is executable (script)
+		if (-x $fragment_path) {
+			# Check for per-script WRAP override on line 2
+			my $wrap_output = $WRAP_SCRIPT_OUTPUT;  # Default to global setting
+			if (open(my $script_fh, '<', $fragment_path)) {
+				my $line1 = <$script_fh>;  # Shebang line
+				my $line2 = <$script_fh>;  # Potential override comment
+				close($script_fh);
+				if ($line2) {
+					$wrap_output = 1 if ($line2 =~ /^\s*#\s*WRAP\s*$/i);
+					$wrap_output = 0 if ($line2 =~ /^\s*#\s*NO\s*WRAP\s*$/i);
+				}
+			}
+
+			# Execute script and capture output
+			my $script_output = `./$fragment_path 2>&1`;
+			if ($script_output) {
+				# Optionally wrap script output in <pre> tags
+				if ($wrap_output) {
+					$fragment_content .= "<PRE>\n${script_output}</PRE>\n";
+				} else {
+					$fragment_content .= $script_output;
+				}
+			}
+		} else {
+			# Read static HTML fragment
+			if (open(my $fh, '<', $fragment_path)) {
+				local $/;
+				my $file_content = <$fh>;
+				close($fh);
+				$fragment_content .= $file_content if ($file_content);
+			}
+		}
+	}
+
+	return $fragment_content;
 }
 
 sub get_page_title {
@@ -937,22 +994,37 @@ if (handle_api_request()) {
 }
 
 
-# If HTML body file exists, override all content
-if (-f $BODY_FILE) {
-	if (get_body_file_title) {
-		$_NSI_CONTENT .= auto_hr() . strip_body_file_title();
-	} else {
-		open(my $body_html, '<', $BODY_FILE) 
-			or die "Cannot open static content file $BODY_FILE";
-		{
-			local $/;
-			$_NSI_CONTENT = auto_hr() . <$body_html>;
+# Content generation: body.html, body/ fragments, or dynamic
+my $has_body_file = -f $BODY_FILE;
+my $has_body_dir = -d "body";
+
+if ($has_body_file || $has_body_dir) {
+	# Process body.html if it exists
+	if ($has_body_file) {
+		if (get_body_file_title) {
+			$_NSI_CONTENT .= auto_hr() . strip_body_file_title();
+		} else {
+			open(my $body_html, '<', $BODY_FILE)
+				or die "Cannot open static content file $BODY_FILE";
+			{
+				local $/;
+				$_NSI_CONTENT = auto_hr() . <$body_html>;
+			}
+			close(body_html);
 		}
-		close(body_html);
 	}
-} elsif (cwd() eq $ENV{DOCUMENT_ROOT} && $DYNAMIC_LANDING) { 
-# If no body file exists and we are in the root directory,
-# generate a dynamic system landing page. 
+	# Process body/ fragments if directory exists (appends after body.html)
+	if ($has_body_dir) {
+		my $fragments = process_body_fragments();
+		$_NSI_CONTENT .= $fragments if ($fragments);
+	}
+	# Append TOC after body content if enabled
+	if ($APPEND_TOC_TO_BODY) {
+		$_NSI_CONTENT .= page_toc();
+	}
+} elsif (cwd() eq $ENV{DOCUMENT_ROOT} && $DYNAMIC_LANDING) {
+# If no body file or fragments exist and we are in the root directory,
+# generate a dynamic system landing page.
 	$_NSI_CONTENT .= page_intro();
 	$_NSI_CONTENT .= page_toc();
 	$_NSI_CONTENT .= status_report();

@@ -62,21 +62,24 @@ $SITE_IMAGE_DIRECTORY      = "${SITE_RESOURCE_DIRECTORY}/img";
 $SITE_STYLE_DIRECTORY      = "${SITE_RESOURCE_DIRECTORY}/style";
 $SITE_MEDITATION_DIRECTORY = "${SITE_IMAGE_DIRECTORY}/meditations";
 # -----------------------------------------------------------------------------
-# HTML includes                                                        includes 
+# HTML includes                                                        includes
 # -----------------------------------------------------------------------------
 $TITLE_FILE = ".title";
 $INTRO_FILE = ".intro";
 $BODY_FILE  = "body.html";
+$GROUP_FILE = ".group";
 # -----------------------------------------------------------------------------
 # System scripts                                                        scripts 
 # -----------------------------------------------------------------------------
 $STATUS_COMMAND = `/usr/shell/sitrep`;
 # -----------------------------------------------------------------------------
-# Table of contents configuration                                  contents,toc 
+# Table of contents configuration                                  contents,toc
 # -----------------------------------------------------------------------------
 $SHOW_TOC = 1;
-$TREE_TOC = 1; # Generate TOC using the filesystem 
+$TREE_TOC = 1; # Generate TOC using the filesystem
 $TOC_FILE = ".info";
+$TOC_TITLE    = ""; # Optional heading displayed above table of contents
+$TOC_SUBTITLE = ""; # Optional subtitle/description below TOC title
 # -----------------------------------------------------------------------------
 # Resources                                                           resources
 # -----------------------------------------------------------------------------

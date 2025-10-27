@@ -1,6 +1,6 @@
 #!/usr/bin/perl
-# NSI: The New Standard Index for simple websites --------------------------- # 
-my $version = '2.7.1';
+# NSI: The New Standard Index for simple websites --------------------------- #
+my $version = '2.8.0';
 # --------------------------------------------------------------------------- #
 
 $_SITE_CONFIG_NAME = "res/config.pl";
@@ -274,6 +274,9 @@ sub tree_toc {
 					my $item_path = "${item}/";
           $item_path =~ s/^$ENV{DOCUMENT_ROOT}//;
 					my $item_description;
+					my $item_group_id;
+					my $item_group_display_title;
+					my $item_group_description;
 					if (open(ITEM_DATA,$item_data)) {
 						my $data_line = 0;
 						while (<ITEM_DATA>) {
@@ -281,16 +284,43 @@ sub tree_toc {
 							$item_description .= "$_" if ($data_line);
 							$data_line++;
 						}
-						push @item_array, $item_title if ($item_title);
-						push @item_array, $item_path if ($item_path);
-						push @item_array, $item_description if ($item_description);
-            					push (@TOC, \@item_array);
+						close(ITEM_DATA);
 					}
+					# Read group file if it exists
+					# Format: Line 1=group_id, Line 2=display_title, Line 3+=description
+					my $item_group = "${item}/${GROUP_FILE}";
+					if (-f $item_group) {
+						if (open(ITEM_GROUP,$item_group)) {
+							my $group_line = 0;
+							while (<ITEM_GROUP>) {
+								chomp;
+								$item_group_id = "$_" if ($group_line == 0);
+								$item_group_display_title = "$_" if ($group_line == 1);
+								$item_group_description .= "$_" if ($group_line > 1);
+								$group_line++;
+							}
+							close(ITEM_GROUP);
+						}
+					}
+					# Always push all 6 elements to maintain consistent array indices
+					# [0]=title, [1]=path, [2]=description, [3]=group_id, [4]=group_display_title, [5]=group_description
+					push @item_array, $item_title;
+					push @item_array, $item_path;
+					push @item_array, $item_description;
+					push @item_array, $item_group_id;
+					push @item_array, $item_group_display_title;
+					push @item_array, $item_group_description;
+            				push (@TOC, \@item_array) if ($item_title && $item_path);
 				}
 			}
 		}
 	}
-	@TOC = sort { $a->[0] cmp $b->[0] } @TOC;
+	# Sort by group (or title if no group), then by title within group
+	@TOC = sort {
+		my $group_a = $a->[3] || $a->[0];
+		my $group_b = $b->[3] || $b->[0];
+		$group_a cmp $group_b || $a->[0] cmp $b->[0]
+	} @TOC;
 	return (@TOC);
 }
 
@@ -318,13 +348,48 @@ sub page_toc {
 	my @TOC = toc();
 	return if (!@TOC);
 	my $contents;
+	my $prev_group_id = '';
+	my $in_group = 0;
 	foreach my $toc_link (@TOC) {
 		my $list_item;
-    		my $item_name        = @$toc_link[0];
-    		my $item_path        = @$toc_link[1];
-    		my $item_description = @$toc_link[2];
+    		my $item_name             = @$toc_link[0];
+    		my $item_path             = @$toc_link[1];
+    		my $item_description      = @$toc_link[2];
+    		my $item_group_id         = @$toc_link[3];
+    		my $item_group_title      = @$toc_link[4];
+    		my $item_group_description = @$toc_link[5];
     		next if (!$item_name);
     		next if (!$item_path);
+    		# Check if we've entered a new group with a display title
+    		my $current_group = $item_group_id || '';
+    		if ($current_group ne $prev_group_id && $item_group_title) {
+    			# Close previous nested group if in one
+    			if ($LIST_UL && $in_group) {
+    				$contents .= "</UL>\n";
+    				$in_group = 0;
+    			}
+    			# Start new group with header and nested list
+    			# NOTE: This places H2 and UL directly inside parent UL without
+    			# wrapping in LI, which is technically non-compliant with strict
+    			# HTML 4.01 but works reliably in all browsers including legacy
+    			# clients and avoids bullets on group titles.
+    			if ($LIST_UL) {
+    				$contents .= "<H2>${item_group_title}</H2>\n";
+    				$contents .= "<P>${item_group_description}</P>\n"
+    					if ($item_group_description);
+    				$contents .= "<UL>\n";
+    				$in_group = 1;
+    			} else {
+    				$contents .= "<H2>${item_group_title}</H2>\n";
+    				$contents .= "<P>${item_group_description}</P>\n"
+    					if ($item_group_description);
+    			}
+    		} elsif ($current_group ne $prev_group_id && $in_group) {
+    			# Exiting a group (back to ungrouped items)
+    			$contents .= "</UL>\n";
+    			$in_group = 0;
+    		}
+    		$prev_group_id = $current_group;
     		$list_item .= "${item_name}";
     		$list_item  = "<A HREF=\"${item_path}\">${list_item}</A>";
     		$list_item  = "<H3>${list_item}</H3>";
@@ -334,8 +399,12 @@ sub page_toc {
     		$list_item .= "\n";
     		$contents .= $list_item;
   	}
-	return if (!$contents); 	
-  	$contents = "<UL>\n${contents}</UL>\n" if ($LIST_UL);
+  	# Close final group if needed
+  	if ($LIST_UL && $in_group) {
+  		$contents .= "</UL>\n";
+  	}
+	return if (!$contents);
+	$contents = "<UL>\n${contents}</UL>\n" if ($LIST_UL);
   	$contents = "<P>\n${TOC_SUBTITLE}</P>\n${contents}"
                  if ($TOC_SUBTITLE);
   	$contents = "<H2>${TOC_TITLE}</H2>\n${contents}"

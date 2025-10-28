@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- #
-my $version = '2.9.7';
+my $version = '2.10.0';
 # --------------------------------------------------------------------------- #
 
 $_SITE_CONFIG_NAME = "res/config.pl";
@@ -33,6 +33,8 @@ $HTML_DOCTYPE $CLOUDFLARE
 $NAVIGATION_MENU $ROOT_NAVIGATION $TOC_NAV $ROOT_TOC_NAV $NAV_POSITION $FOOTER_NAV
 
 $CENTER_TITLE $AUTO_RULE $SUB_LOGO $TREE_TOC $LIST_UL $WRAP_SCRIPT_OUTPUT
+
+$CENTER_IMAGE_CAPTIONS
 
 $SHOW_TOC $TOC_TITLE $TOC_SUBTITLE $APPEND_TOC_TO_BODY
 
@@ -240,6 +242,81 @@ sub process_body_fragments {
 	}
 
 	return $fragment_content;
+}
+
+sub transform_nsi_image_tags {
+	my $content = shift @_;
+	return $content if (!$content);
+
+	# Find all <img nsi-res="..."> tags with optional alt and caption attributes
+	$content =~ s{<img\s+([^>]*nsi-res="[^"]+"[^>]*)\s*/?>}{
+		my $attrs = $1;
+		my $replacement = "";
+
+		# Extract nsi-res attribute (required)
+		my $basename = "";
+		if ($attrs =~ /nsi-res="([^"]+)"/) {
+			$basename = $1;
+		}
+
+		# Extract optional alt attribute
+		my $alt_text = "";
+		if ($attrs =~ /alt="([^"]*)"/) {
+			$alt_text = $1;
+		} else {
+			$alt_text = $basename;  # Default to basename
+		}
+
+		# Extract optional caption attribute
+		my $caption = "";
+		if ($attrs =~ /caption="([^"]*)"/) {
+			$caption = $1;
+		}
+
+		# Look for the image file in the full-size directory
+		my @extensions = ('jpg', 'jpeg', 'png', 'gif');
+		my $found_file = "";
+		my $found_ext = "";
+
+		foreach my $ext (@extensions) {
+			my $test_file = "${FULLSIZE_IMAGE_DIRECTORY}/${basename}.${ext}";
+			if (-f $test_file) {
+				$found_file = $test_file;
+				$found_ext = $ext;
+				last;
+			}
+		}
+
+		if ($found_file) {
+			# Build the replacement HTML
+			my $full_path = "${FULLSIZE_IMAGE_DIRECTORY}/${basename}.${found_ext}";
+			my $preview_path = "${PREVIEW_DIRECTORY}/${basename}.${found_ext}";
+
+			$replacement = "<DIV CLASS=\"nsi-image\">\n";
+			$replacement .= "  <A HREF=\"${full_path}\">\n";
+			$replacement .= "    <IMG SRC=\"${preview_path}\" ALT=\"${alt_text}\">\n";
+			$replacement .= "  </A>\n";
+
+			# Add caption if provided
+			if ($caption) {
+				if ($CENTER_IMAGE_CAPTIONS) {
+					$replacement .= "  <CENTER><P CLASS=\"nsi-caption\">${caption}</P></CENTER>\n";
+				} else {
+					$replacement .= "  <P CLASS=\"nsi-caption\">${caption}</P>\n";
+				}
+			}
+
+			$replacement .= "</DIV>\n";
+		} else {
+			# Image not found - leave original tag or show error
+			$replacement = "<!-- NSI: Image '${basename}' not found in ${FULLSIZE_IMAGE_DIRECTORY} -->\n";
+			$replacement .= "<I>[Image: ${basename} (not found)]</I>";
+		}
+
+		$replacement;
+	}gei;
+
+	return $content;
 }
 
 sub get_logical_cwd {
@@ -1145,6 +1222,9 @@ if ($has_body_file || $has_body_dir) {
 	$_NSI_CONTENT .= page_intro();
 	$_NSI_CONTENT .= page_toc();
 }
+
+# Transform custom NSI image tags
+$_NSI_CONTENT = transform_nsi_image_tags($_NSI_CONTENT) if ($_NSI_CONTENT);
 
 # Process image previews, if applicable
 process_page_images(); 

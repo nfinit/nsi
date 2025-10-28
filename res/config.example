@@ -32,6 +32,7 @@ $SUB_LOGO        =  0; # Show site logo on subpage titles
 $WRAP_SCRIPT_OUTPUT = 0; # Wrap executable script output in <pre> tags
                          # Scripts can override with "# WRAP" or "# NO WRAP"
                          # as a comment on line 2 (after shebang)
+$CENTER_IMAGE_CAPTIONS = 1; # Center image captions (for nsi-res images)
 # -----------------------------------------------------------------------------
 # Display elements							display
 # -----------------------------------------------------------------------------

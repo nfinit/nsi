@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- #
-my $version = '2.9.6';
+my $version = '2.9.7';
 # --------------------------------------------------------------------------- #
 
 $_SITE_CONFIG_NAME = "res/config.pl";
@@ -557,7 +557,12 @@ sub cwd_nested_in {
 
 sub navigation_menu {
   return if (!$NAVIGATION_MENU);
-	return if (!$ROOT_NAVIGATION && get_logical_cwd() eq $ENV{DOCUMENT_ROOT});
+	# Normalize paths for comparison (handle trailing slash differences)
+	my $current_dir = get_logical_cwd();
+	my $doc_root = $ENV{DOCUMENT_ROOT};
+	$current_dir =~ s/\/$//;
+	$doc_root =~ s/\/$//;
+	return if (!$ROOT_NAVIGATION && $current_dir eq $doc_root);
   my $menu;
   my @menu_items;
   if ($TOC_NAV) {
@@ -568,8 +573,19 @@ sub navigation_menu {
       $toc_target =~ /\/$/;
     } else {
       $toc_target = get_logical_cwd();
-      $toc_target =~ /\/$/;
-      $toc_target = dirname($toc_target);
+      # Don't traverse above DOCUMENT_ROOT - prevents picking up
+      # sibling sites/directories outside the web root
+      # Strip trailing slashes for comparison
+      my $normalized_target = $toc_target;
+      my $normalized_root = $ENV{DOCUMENT_ROOT};
+      $normalized_target =~ s/\/$//;
+      $normalized_root =~ s/\/$//;
+      if ($normalized_target eq $normalized_root) {
+        # At root, use current directory (shows children, not siblings)
+        # $toc_target already set to current directory above
+      } else {
+        $toc_target = dirname($toc_target);
+      }
     }
     @TOC = toc($toc_target);
     return if (!@TOC);
@@ -621,32 +637,44 @@ sub page_footer {
 	$footer_left = "<TD ALIGN=\"LEFT\">${footer_left}</TD>\n";
 	$footer_row .= $footer_left;
 	# Content in the RIGHT ALIGNED block
-	if ($FOOTER_NAV && get_logical_cwd() ne $ENV{DOCUMENT_ROOT}) {
+	if ($FOOTER_NAV) {
 		my $footer_nav;
+		my $nav_controls = "";
+
+		# Normalize paths for comparison (handle trailing slash differences)
+		my $current_dir = get_logical_cwd();
+		my $doc_root = $ENV{DOCUMENT_ROOT};
+		$current_dir =~ s/\/$//;
+		$doc_root =~ s/\/$//;
+		my $at_root = ($current_dir eq $doc_root);
+
 		# Check if parent is root using logical path
 		my $parent_is_root = (abs_path("..") eq abs_path($ENV{DOCUMENT_ROOT}));
 
-		$footer_nav .= "<SPAN CLASS=\"footer_navigation no_print\">\n";
-		$footer_nav .= $LINE_FRAME_L if ($LINE_ELEMENTS);
-
-		# Only show parent link if parent is not the root
-		if (!$parent_is_root) {
+		# Only show parent link if not at root and parent is not the root
+		if (!$at_root && !$parent_is_root) {
 			my $parent_title = get_parent_title();
-			$footer_nav .= "<A HREF=\"..\">${parent_title}</A>\n";
+			$nav_controls .= "<A HREF=\"..\">${parent_title}</A>\n";
 			# Add divider before Home link if needed
 			if ($NAVIGATION_MENU && $NAV_POSITION >= 0) {
-				$footer_nav .= $LINE_ELEMENT_DIVIDER if ($LINE_ELEMENTS);
+				$nav_controls .= $LINE_ELEMENT_DIVIDER if ($LINE_ELEMENTS);
 			}
 		}
 
-		# Show Home link if navigation menu is enabled
-		if ($NAVIGATION_MENU && $NAV_POSITION >= 0) {
-			$footer_nav .= "<A HREF=\"/\">Home</A>\n";
+		# Show Home link if navigation menu is enabled and not already at root
+		if ($NAVIGATION_MENU && $NAV_POSITION >= 0 && !$at_root) {
+			$nav_controls .= "<A HREF=\"/\">Home</A>\n";
 		}
 
-		$footer_nav .= $LINE_FRAME_R if ($LINE_ELEMENTS);
-		$footer_nav .= "</SPAN>\n";
-		$footer_right .= $footer_nav;
+		# Only render the footer navigation block if there are controls
+		if ($nav_controls) {
+			$footer_nav .= "<SPAN CLASS=\"footer_navigation no_print\">\n";
+			$footer_nav .= $LINE_FRAME_L if ($LINE_ELEMENTS);
+			$footer_nav .= $nav_controls;
+			$footer_nav .= $LINE_FRAME_R if ($LINE_ELEMENTS);
+			$footer_nav .= "</SPAN>\n";
+			$footer_right .= $footer_nav;
+		}
 	}	
 	$footer_right = "<TD ALIGN=\"RIGHT\">${footer_right}</TD>\n";
 	$footer_row .= $footer_right;

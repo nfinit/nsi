@@ -9,12 +9,14 @@ body { padding: 1vw; }
   padding: 1vw;
 } 
 
+.nsi-collage img { max-width: 100%; height: auto; }
+
 @media screen and (min-width: 800px) 
 { 
 	.script-output { font-size: 14px; } 
 }
 
 @media print
-{    
+{
     .no_print { display: none !important; }
-} 
+}

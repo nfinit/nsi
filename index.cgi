@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- #
-my $version = '2.11.0';
+my $version = '2.12.0';
 # --------------------------------------------------------------------------- #
 
 $_SITE_CONFIG_NAME = "res/config.pl";
@@ -318,6 +318,88 @@ sub transform_nsi_image_tags {
 
 		$replacement;
 	}gei;
+
+	return $content;
+}
+
+sub transform_nsi_collage_tags {
+	my $content = shift @_;
+	return $content if (!$content);
+
+	# Find all <div nsi-collage="..."> blocks and transform them
+	# NOTE: Case-sensitive to avoid matching uppercase </DIV> tags from nsi-image blocks
+	$content =~ s{<div\s+nsi-collage="([^"]+)"[^>]*>(.*?)</div>}{
+		my $layout = $1;
+		my $inner_content = $2;
+		my $replacement = "";
+
+		# Extract all nsi-image DIVs from the content
+		my @images;
+		while ($inner_content =~ /<DIV\s+CLASS="nsi-image">(.*?)<\/DIV>/gis) {
+			push @images, $1;
+		}
+
+		# Return original if no images found
+		$& if (!@images);
+
+		# Add WIDTH="100%" to IMG tags for broader browser compatibility.
+		# While NN4 ignores this, many other period browsers (IE5+, Opera, etc.)
+		# do respect it. Combined with CSS (modern) and CSS expressions (IE5),
+		# this provides the widest compatibility.
+		foreach my $img (@images) {
+			$img =~ s/<IMG\s+/<IMG WIDTH="100%" /gi;
+		}
+
+		# Determine layout type and build table
+		if ($layout eq 'horizontal') {
+			# Single row layout with equal-width cells
+			my $num_images = scalar @images;
+			my $cell_width = int(100 / $num_images);
+
+			$replacement = "<TABLE WIDTH=\"100%\" CLASS=\"nsi-collage nsi-horizontal\">\n<TR>\n";
+			foreach my $img (@images) {
+				$replacement .= "  <TD WIDTH=\"${cell_width}%\" CLASS=\"nsi-collage-cell\">\n${img}  </TD>\n";
+			}
+			$replacement .= "</TR>\n</TABLE>\n";
+
+		} elsif ($layout =~ /^grid-(\d+)$/) {
+			# Grid layout with specified columns
+			my $columns = $1;
+			my $cell_width = int(100 / $columns);
+
+			$replacement = "<TABLE WIDTH=\"100%\" CLASS=\"nsi-collage nsi-grid-${columns}\">\n";
+
+			my $col = 0;
+			foreach my $img (@images) {
+				$replacement .= "<TR>\n" if ($col == 0);
+				$replacement .= "  <TD WIDTH=\"${cell_width}%\" CLASS=\"nsi-collage-cell\">\n${img}  </TD>\n";
+				$col++;
+
+				if ($col >= $columns) {
+					$replacement .= "</TR>\n";
+					$col = 0;
+				}
+			}
+
+			# Close incomplete row if needed
+			if ($col > 0) {
+				# Fill remaining cells with empty TDs for alignment
+				while ($col < $columns) {
+					$replacement .= "  <TD WIDTH=\"${cell_width}%\" CLASS=\"nsi-collage-cell-empty\"></TD>\n";
+					$col++;
+				}
+				$replacement .= "</TR>\n";
+			}
+
+			$replacement .= "</TABLE>\n";
+
+		} else {
+			# Unknown layout type - return original
+			$&;
+		}
+
+		$replacement;
+	}ges;
 
 	return $content;
 }
@@ -1434,6 +1516,9 @@ if ($has_body_file || $has_body_dir) {
 
 # Transform custom NSI image tags
 $_NSI_CONTENT = transform_nsi_image_tags($_NSI_CONTENT) if ($_NSI_CONTENT);
+
+# Transform NSI collage blocks (must run after transform_nsi_image_tags)
+$_NSI_CONTENT = transform_nsi_collage_tags($_NSI_CONTENT) if ($_NSI_CONTENT);
 
 # Process image previews, if applicable
 process_page_images(); 

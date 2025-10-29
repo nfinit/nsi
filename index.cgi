@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- #
-my $version = '2.12.0';
+my $version = '2.13.0';
 # --------------------------------------------------------------------------- #
 
 $_SITE_CONFIG_NAME = "res/config.pl";
@@ -152,6 +152,90 @@ debug_line("Current working directory is '" . cwd() . "'");
 debug_line("Running in interactive mode.") if ($_INTERACTIVE);
 debug_line("API is enabled.") if ($API_ENABLED);
 debug_line("Query string: $ENV{'QUERY_STRING'}") if ($ENV{'QUERY_STRING'});
+
+# Browser detection subroutines --------------------------------------------- #
+# Provides client browser detection and tier classification for feature
+# adaptation. Returns tier levels (legacy/midtier/modern) that can be used
+# to adjust rendering, image sizes, and other browser-specific behaviors.
+#
+# User-Agent detection is inherently imperfect and should be used sparingly.
+# NSI philosophy: Default to assuming capability, only detect when absolutely
+# necessary for compatibility (e.g., known broken behavior in specific browsers).
+#
+# USAGE:
+#   In web context, $_BROWSER_TIER is automatically set to 'legacy', 'midtier',
+#   or 'modern'. Use this variable to conditionally adjust behavior:
+#
+#   Example:
+#     my $img_dir = ($_BROWSER_TIER eq 'legacy')
+#                   ? $COLLAGE_THUMBNAIL_DIRECTORY
+#                   : $PREVIEW_DIRECTORY;
+#
+#   To add new browser detection:
+#     1. Create a helper function (e.g., sub is_browsername)
+#     2. Add logic to get_browser_tier() for tier classification
+#     3. Update this documentation
+
+# Detect if client is Netscape Navigator 4.x
+# Pattern: Mozilla/4.x WITHOUT "compatible", "MSIE", or "Gecko"
+# Modern browsers spoof Mozilla/4 but include identifying keywords
+sub is_netscape4 {
+	my $ua = $ENV{HTTP_USER_AGENT} || '';
+	return 1 if ($ua =~ /Mozilla\/4\./ && $ua !~ /compatible|MSIE|Gecko/i);
+	return 0;
+}
+
+# Detect Internet Explorer and return major version number
+# Returns version (4, 5, 6, etc.) or 0 if not IE
+sub get_ie_version {
+	my $ua = $ENV{HTTP_USER_AGENT} || '';
+	return $1 if ($ua =~ /MSIE (\d+)\./);
+	return 0;
+}
+
+# Detect Opera browser and return major version number
+# Returns version or 0 if not Opera
+sub get_opera_version {
+	my $ua = $ENV{HTTP_USER_AGENT} || '';
+	return $1 if ($ua =~ /Opera[\/\s](\d+)/i);
+	return 0;
+}
+
+# Main browser tier detection function
+# Returns: 'legacy', 'midtier', or 'modern'
+#
+# legacy  - Browsers with known broken behavior requiring special handling
+#           (NN4, IE4-5, extremely limited CSS/JS support)
+# midtier - Older but functional browsers (IE6-9, Opera 4-9, early Firefox)
+#           Decent CSS support, limited modern features
+# modern  - Current browsers and unknowns (assume capability)
+#           Full CSS3, modern standards
+sub get_browser_tier {
+	# Tier 1: Legacy browsers with known limitations
+	return 'legacy' if (is_netscape4());
+
+	my $ie_ver = get_ie_version();
+	return 'legacy' if ($ie_ver >= 4 && $ie_ver <= 5);
+
+	# Tier 2: Mid-tier browsers (functional but dated)
+	return 'midtier' if ($ie_ver >= 6 && $ie_ver <= 9);
+
+	my $opera_ver = get_opera_version();
+	return 'midtier' if ($opera_ver >= 4 && $opera_ver <= 9);
+
+	# Tier 3: Modern browsers (default for unknowns)
+	# Better to assume capability than to break on new browsers
+	return 'modern';
+}
+
+# Detect browser tier for this request (only in web context)
+my $_BROWSER_TIER;
+if (!$_INTERACTIVE) {
+	$_BROWSER_TIER = get_browser_tier();
+	debug_line("Browser tier: ${_BROWSER_TIER}");
+	debug_line("User-Agent: $ENV{HTTP_USER_AGENT}") if ($ENV{HTTP_USER_AGENT});
+}
+
 # Generic dynamic content subroutines --------------------------------------- #
 
 # Automatic content rule
@@ -293,7 +377,12 @@ sub transform_nsi_image_tags {
 		if ($found_file) {
 			# Build the replacement HTML
 			my $full_path = "${FULLSIZE_IMAGE_DIRECTORY}/${basename}.${found_ext}";
-			my $preview_path = "${PREVIEW_DIRECTORY}/${basename}.${found_ext}";
+
+			# Use legacy previews (600px GIF) for legacy browsers, standard previews (1024px) for others
+			# Legacy previews are always GIF format for maximum compatibility
+			my $preview_path = ($_BROWSER_TIER eq 'legacy')
+			                   ? "${LEGACY_PREVIEW_DIRECTORY}/${basename}.gif"
+			                   : "${PREVIEW_DIRECTORY}/${basename}.${found_ext}";
 
 			$replacement = "<DIV CLASS=\"nsi-image\">\n";
 			$replacement .= "  <A HREF=\"${full_path}\">\n";

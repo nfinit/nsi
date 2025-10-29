@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- #
-my $version = '2.10.0';
+my $version = '2.11.0';
 # --------------------------------------------------------------------------- #
 
 $_SITE_CONFIG_NAME = "res/config.pl";
@@ -8,6 +8,7 @@ $_LOCAL_CONFIG = "./.config.pl";
 
 # DO NOT EDIT ANYTHING BELOW THIS LINE
 # =========================================================================== #
+use utf8;
 use Cwd qw(cwd abs_path);
 use File::Basename;
 use Time::HiRes qw(time);
@@ -30,7 +31,7 @@ $DYNAMIC_LANDING
 
 $HTML_DOCTYPE $CLOUDFLARE
 
-$NAVIGATION_MENU $ROOT_NAVIGATION $TOC_NAV $ROOT_TOC_NAV $NAV_POSITION $FOOTER_NAV
+$NAVIGATION_MENU $ROOT_NAVIGATION $TOC_NAV $ROOT_TOC_NAV $NAV_POSITION $FOOTER_NAV $FOOTER_TOP_LINK
 
 $CENTER_TITLE $AUTO_RULE $SUB_LOGO $TREE_TOC $LIST_UL $WRAP_SCRIPT_OUTPUT
 
@@ -42,10 +43,12 @@ $BODY_FILE $TITLE_FILE $INTRO_FILE $TOC_FILE $GROUP_FILE
 
 $LOGO $FAVICON
 
-$IMAGE_DIRECTORY $API_IMAGE_DIRECTORY $PREVIEW_DIRECTORY 
+$IMAGE_DIRECTORY $API_IMAGE_DIRECTORY $PREVIEW_DIRECTORY
 $LEGACY_PREVIEW_DIRECTORY $FULLSIZE_IMAGE_DIRECTORY
 
 $PREVIEW_WIDTH $LEGACY_PREVIEW_WIDTH
+
+$IMAGE_API_RECURSE
 
 $MEDITATION_DIRECTORY $MEDITATION_FILETYPES
 
@@ -728,6 +731,15 @@ sub page_footer {
 		# Check if parent is root using logical path
 		my $parent_is_root = (abs_path("..") eq abs_path($ENV{DOCUMENT_ROOT}));
 
+		# Add "Back to top" link as the first element
+		if ($FOOTER_TOP_LINK) {
+			$nav_controls .= "<A HREF=\"#content\">Back to top</A>\n";
+			# Add divider after if there will be more controls
+			if ((!$at_root && !$parent_is_root) || ($NAVIGATION_MENU && $NAV_POSITION >= 0 && !$at_root)) {
+				$nav_controls .= $LINE_ELEMENT_DIVIDER if ($LINE_ELEMENTS);
+			}
+		}
+
 		# Only show parent link if not at root and parent is not the root
 		if (!$at_root && !$parent_is_root) {
 			my $parent_title = get_parent_title();
@@ -955,6 +967,12 @@ sub generate_image_previews {
 
 # Get random image and return the file path
 sub random_image {
+  # If recursive mode is enabled in config, use recursive search
+  if ($IMAGE_API_RECURSE) {
+    return random_image_recursive();
+  }
+
+  # Otherwise, only search current directory's API image directory
   return if (! -d $API_IMAGE_DIRECTORY);
   opendir(IMAGES,$API_IMAGE_DIRECTORY) or die $!;
   my @images = grep /$IMAGE_FILETYPES/, readdir(IMAGES);
@@ -969,15 +987,15 @@ sub random_image {
 sub random_image_recursive {
   my $dir = shift || cwd();  # Start from current directory if none specified
   return if (!$dir);
-  
+
   my @all_images;
-  
+
   # Helper function to recursively find image files
   my $find_images;
   $find_images = sub {
     my $current_dir = shift;
     return if (!$current_dir || ! -d $current_dir);
-    
+
     opendir(my $dh, $current_dir) or return; # Skip if can't open
     my @entries = grep { !/^\.\.?$/ } readdir($dh);
     closedir($dh);
@@ -996,33 +1014,216 @@ sub random_image_recursive {
       }
     }
   };
-  
+
   # Start the recursive search from the current directory
   $find_images->($dir);
-  
+
   my $image_count = scalar @all_images;
   return if (!$image_count);
-  
+
   my $selection = int(rand($image_count));
   return $all_images[$selection];
+}
+
+# Transliterate accented characters to ASCII equivalents
+# Handles common European accented characters (Nordic, Romance languages, etc.)
+sub transliterate_to_ascii {
+  my $text = shift;
+  return '' unless ($text);
+
+  # Common accented vowels to ASCII
+  $text =~ s/[àáâãäåāăą]/a/g;
+  $text =~ s/[ÀÁÂÃÄÅĀĂĄ]/A/g;
+  $text =~ s/[èéêëēĕėęě]/e/g;
+  $text =~ s/[ÈÉÊËĒĔĖĘĚ]/E/g;
+  $text =~ s/[ìíîïĩīĭį]/i/g;
+  $text =~ s/[ÌÍÎÏĨĪĬĮ]/I/g;
+  $text =~ s/[òóôõöøōŏő]/o/g;
+  $text =~ s/[ÒÓÔÕÖØŌŎŐ]/O/g;
+  $text =~ s/[ùúûüũūŭů]/u/g;
+  $text =~ s/[ÙÚÛÜŨŪŬŮ]/U/g;
+  $text =~ s/[ýÿ]/y/g;
+  $text =~ s/[ÝŸ]/Y/g;
+
+  # Nordic/Icelandic special characters
+  $text =~ s/[æ]/ae/g;
+  $text =~ s/[Æ]/AE/g;
+  $text =~ s/[ð]/d/g;
+  $text =~ s/[Ð]/D/g;
+  $text =~ s/[þ]/th/g;
+  $text =~ s/[Þ]/TH/g;
+
+  # Other common characters
+  $text =~ s/[ç]/c/g;
+  $text =~ s/[Ç]/C/g;
+  $text =~ s/[ñ]/n/g;
+  $text =~ s/[Ñ]/N/g;
+  $text =~ s/[ß]/ss/g;
+
+  return $text;
+}
+
+# Parse .aliases file and return hash of alias => path mappings
+# Aliases are normalized (transliterated + lowercased) for matching
+sub parse_aliases_file {
+  my $aliases_file = shift;
+  return unless (-f $aliases_file);
+
+  my %aliases;
+  open(my $fh, '<:utf8', $aliases_file) or return;
+  while (my $line = <$fh>) {
+    chomp $line;
+    # Skip comments and empty lines
+    next if ($line =~ /^\s*#/ || $line =~ /^\s*$/);
+    # Parse alias=path format
+    if ($line =~ /^\s*(.+?)\s*=\s*(.+?)\s*$/) {
+      my ($alias, $path) = ($1, $2);
+      # Normalize: transliterate accents, then lowercase
+      my $normalized_alias = lc(transliterate_to_ascii($alias));
+      $aliases{$normalized_alias} = $path;
+    }
+  }
+  close($fh);
+  return %aliases;
+}
+
+# Search for alias in current directory, then immediate subdirectories (two-level search)
+# Performs case-insensitive and accent-insensitive matching
+sub resolve_alias {
+  my $alias_query = shift;
+  return unless ($alias_query);
+
+  # Normalize query: transliterate accents, then lowercase
+  my $normalized_query = lc(transliterate_to_ascii($alias_query));
+
+  my $current_dir = get_logical_cwd();
+  my $aliases_file = "${current_dir}/.aliases";
+
+  # Level 1: Check current directory's .aliases file
+  if (-f $aliases_file) {
+    my %aliases = parse_aliases_file($aliases_file);
+    return $aliases{$normalized_query} if (exists $aliases{$normalized_query});
+  }
+
+  # Level 2: Check immediate subdirectories' .aliases files
+  return unless (-d $current_dir);
+  opendir(my $dh, $current_dir) or return;
+  my @subdirs = grep { -d "${current_dir}/$_" && !/^\./ } readdir($dh);
+  closedir($dh);
+
+  foreach my $subdir (@subdirs) {
+    my $subdir_aliases = "${current_dir}/${subdir}/.aliases";
+    next unless (-f $subdir_aliases);
+
+    my %aliases = parse_aliases_file($subdir_aliases);
+    if (exists $aliases{$normalized_query}) {
+      # Return path relative to current directory (subdir/mapped_path)
+      my $mapped_path = $aliases{$normalized_query};
+      return "${subdir}/${mapped_path}";
+    }
+  }
+
+  return; # No alias found
+}
+
+# Get random image from a specific subdirectory path
+sub random_image_from_path {
+  my $subpath = shift;
+  return if (!$subpath);
+
+  # Try to resolve alias first (before sanitization to preserve original query)
+  my $resolved_path = resolve_alias($subpath);
+  $subpath = $resolved_path if ($resolved_path);
+
+  # Sanitize path to prevent directory traversal attacks
+  # Remove any ../ patterns, leading/trailing slashes
+  $subpath =~ s/\.\.//g;           # Remove all .. patterns
+  $subpath =~ s/^\/+//;            # Remove leading slashes
+  $subpath =~ s/\/+$//;            # Remove trailing slashes
+  $subpath =~ s/\/\/+/\//g;        # Collapse multiple slashes
+
+  return if (!$subpath);           # Return if sanitization left nothing
+
+  # Construct target directory path relative to current script location
+  my $current_dir = get_logical_cwd();
+  $current_dir =~ s/\/$//;         # Remove trailing slash
+  my $target_dir = "${current_dir}/${subpath}";
+
+  # Verify the target directory exists
+  return if (! -d $target_dir);
+
+  # Check if resolved path is still within DOCUMENT_ROOT (security check)
+  my $resolved_path = abs_path($target_dir) || $target_dir;
+  my $doc_root = abs_path($ENV{DOCUMENT_ROOT}) || $ENV{DOCUMENT_ROOT};
+  $resolved_path =~ s/\/$//;
+  $doc_root =~ s/\/$//;
+  return if ($resolved_path !~ /^\Q$doc_root\E/);
+
+  # If recursive mode is enabled in config, recursively search from target directory
+  if ($IMAGE_API_RECURSE) {
+    return random_image_recursive($target_dir);
+  }
+
+  # Otherwise, only search the target directory's API image directory
+  # Look for API image directory within the target
+  my $image_dir = "${target_dir}/${API_IMAGE_DIRECTORY}";
+  return if (! -d $image_dir);
+
+  # Get images from this directory
+  opendir(my $dh, $image_dir) or return;
+  my @images = grep { /$IMAGE_FILETYPES/ } readdir($dh);
+  closedir($dh);
+
+  my $image_count = scalar @images;
+  return if (!$image_count);
+
+  my $selection = int(rand($image_count));
+  return "${image_dir}/$images[$selection]";
+}
+
+# URL decode and handle UTF-8 properly
+sub url_decode {
+  my $str = shift;
+  return '' unless defined $str;
+
+  # Replace + with space
+  $str =~ s/\+/ /g;
+
+  # Decode %XX sequences
+  $str =~ s/%([0-9A-Fa-f]{2})/chr(hex($1))/eg;
+
+  # Ensure string is treated as UTF-8
+  utf8::decode($str) unless utf8::is_utf8($str);
+
+  return $str;
 }
 
 # API handler
 sub handle_api_request {
 	if ($API_ENABLED) {
-  	my $query_string = $ENV{QUERY_STRING} || ''; 
+  	my $query_string = $ENV{QUERY_STRING} || '';
   	my @pairs = split(/[&;]/, $query_string);
   	foreach(@pairs)
   	{
     	my($key, $value) = split(/=/, $_, 2);
+
+    	# URL decode the value
+    	$value = url_decode($value) if defined $value;
+
     	if ($key eq 'random-image') {
       	my $image_path;
-      	if ($value eq 'recursive') {
-        	$image_path = random_image_recursive();
+      	my $search_location = $value || "current directory";
+
+      	# Route based on value
+      	if ($value && $value ne '') {
+        	# Value provided: treat as subdirectory path
+        	$image_path = random_image_from_path($value);
       	} else {
+        	# No value or empty: current directory
+        	# (recursion controlled by $IMAGE_API_RECURSE config)
         	$image_path = random_image();
       	}
-      
+
       	if ($image_path && -f $image_path) {
         	# Get the file extension to determine content type
         	my $content_type = 'image/jpeg';  # Default to JPEG
@@ -1031,7 +1232,7 @@ sub handle_api_request {
         	} elsif ($image_path =~ /\.gif$/i) {
           	$content_type = 'image/gif';
         	}
-        
+
         	# Read and output the image file
         	if (open(my $image, '<', $image_path)) {
           	binmode($image);
@@ -1040,6 +1241,14 @@ sub handle_api_request {
           	close($image);
           	return 1;
         	}
+      	} else {
+        	# API request detected but no image found - return 404 error
+        	print "Status: 404 Not Found\n";
+        	print "Content-type: text/plain\n\n";
+        	print "Error: No images found";
+        	print " in location: $search_location" if ($value);
+        	print "\n";
+        	return 1;
       	}
     	}
   	}

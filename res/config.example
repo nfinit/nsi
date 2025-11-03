@@ -13,7 +13,8 @@ $CURRENT_TIME = `date`;
 # Site information					   	      site,info
 # -----------------------------------------------------------------------------
 $ORGANIZATION = "NFINIT labs";
-$SITE_NAME    = "NSI Development Repository"; 
+$SITE_NAME    = "NSI Development Repository";
+$HOME_PAGE_TITLE = "Home";  # Title for root/home page (also used in navigation)
 $API_ENABLED  = 1;
 # -----------------------------------------------------------------------------
 # Display preferences							display

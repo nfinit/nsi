@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- #
-my $version = '2.15.0';
+my $version = '2.15.3';
 # --------------------------------------------------------------------------- #
 
 $_SITE_CONFIG_NAME = "res/config.pl";
@@ -57,7 +57,7 @@ $MAIN_STYLESHEET $LEGACY_STYLESHEET
 
 $SYSTEM_STATUS $STATUS_COMMAND
 
-$HOSTNAME $ORGANIZATION $SITE_NAME
+$HOSTNAME $ORGANIZATION $SITE_NAME $HOME_PAGE_TITLE
 
 $DEBUG_TRACE
 
@@ -126,6 +126,9 @@ chomp $HOSTNAME;
 $MEDITATION_FILETYPES =~ s/\./\\\./g;
 $MEDITATION_FILETYPES =~ s/\|/\$\|/g;
 $MEDITATION_FILETYPES = "${MEDITATION_FILETYPES}\$";
+
+# Set default home page title if not configured
+$HOME_PAGE_TITLE = "Home" unless $HOME_PAGE_TITLE;
 
 
 # Utility subroutines ------------------------------------------------------- #
@@ -696,12 +699,35 @@ sub get_page_title {
     close(title_html);
   } elsif ($body_title) {
     $title = $body_title;
-  } elsif ($SITE_NAME) {
-    $title = $SITE_NAME;
-  } elsif (cwd() eq $ENV{DOCUMENT_ROOT}) {
-    $title .= "${HOSTNAME}"     if ($HOSTNAME);
-    $title .= " @ "             if ($HOSTNAME && $ORGANIZATION);
-    $title .= "${ORGANIZATION}" if ($ORGANIZATION);
+  } elsif ( -f "${TOC_FILE}" ) {
+    # Fallback to first line of .info file if no explicit title
+    open(my $info_fh, '<', $TOC_FILE);
+    if ($info_fh) {
+      my $info_title = <$info_fh>;
+      close($info_fh);
+      chomp($info_title) if ($info_title);
+      $title = $info_title if ($info_title);
+    }
+  }
+
+  # Final fallback to site defaults
+  if (!$title) {
+    # Normalize paths for comparison (handle trailing slash differences)
+    my $current_dir = get_logical_cwd();
+    my $doc_root = $ENV{DOCUMENT_ROOT};
+    $current_dir =~ s/\/$//;
+    $doc_root =~ s/\/$//;
+
+    # Use HOME_PAGE_TITLE if we're at the root
+    if ($current_dir eq $doc_root) {
+      $title = $HOME_PAGE_TITLE;
+    } elsif ($SITE_NAME) {
+      $title = $SITE_NAME;
+    } elsif ($HOSTNAME || $ORGANIZATION) {
+      $title .= "${HOSTNAME}"     if ($HOSTNAME);
+      $title .= " @ "             if ($HOSTNAME && $ORGANIZATION);
+      $title .= "${ORGANIZATION}" if ($ORGANIZATION);
+    }
   }
   return ($title);
 }
@@ -955,7 +981,7 @@ sub navigation_menu {
     }
     @TOC = toc($toc_target);
     return if (!@TOC);
-    my @nav_items = (['Home','/']);
+    my @nav_items = ([$HOME_PAGE_TITLE,'/']);
 	  push(@nav_items,@TOC);
     my $item_count = 0;
     foreach my $toc_link (@nav_items) {
@@ -1038,7 +1064,7 @@ sub page_footer {
 
 		# Show Home link if navigation menu is enabled and not already at root
 		if ($NAVIGATION_MENU && $NAV_POSITION >= 0 && !$at_root) {
-			$nav_controls .= "<A HREF=\"/\">Home</A>\n";
+			$nav_controls .= "<A HREF=\"/\">${HOME_PAGE_TITLE}</A>\n";
 		}
 
 		# Only render the footer navigation block if there are controls
@@ -1091,10 +1117,16 @@ sub metadata_title {
     $SITE_NAME .= " @ "             if ($ORGANIZATION && $HOSTNAME);
     $SITE_NAME .= "${ORGANIZATION}" if ($ORGANIZATION);
   }
-  $title = '' if ($SITE_NAME eq $title);
+  # Clean whitespace from both for comparison
+  my $clean_title = $title;
+  my $clean_site = $SITE_NAME;
+  $clean_title =~ s/^\s+|\s+$//g if $clean_title;
+  $clean_site =~ s/^\s+|\s+$//g if $clean_site;
+  # Deduplicate: if page title equals site name, don't repeat it
+  $title = '' if ($clean_site && $clean_title && $clean_site eq $clean_title);
   $page_title .= "${SITE_NAME}" if ($SITE_NAME);
-  $page_title .= " - "          if ($SITE_NAME && $title); 
-  $page_title .= "${title}"     if ($title); 
+  $page_title .= " - "          if ($SITE_NAME && $title);
+  $page_title .= "${title}"     if ($title);
   $page_title  = $META_TITLE    if ($META_TITLE);
   return if (!$page_title);
   $page_title = "<TITLE>${page_title}</TITLE>\n";

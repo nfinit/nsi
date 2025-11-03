@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- #
-my $version = '2.13.0';
+my $version = '2.15.0';
 # --------------------------------------------------------------------------- #
 
 $_SITE_CONFIG_NAME = "res/config.pl";
@@ -44,9 +44,10 @@ $BODY_FILE $TITLE_FILE $INTRO_FILE $TOC_FILE $GROUP_FILE
 $LOGO $FAVICON
 
 $IMAGE_DIRECTORY $API_IMAGE_DIRECTORY $PREVIEW_DIRECTORY
-$LEGACY_PREVIEW_DIRECTORY $FULLSIZE_IMAGE_DIRECTORY
+$LEGACY_PREVIEW_DIRECTORY $LEGACY_PREVIEW_STANDARD_DIRECTORY
+$COLLAGE_THUMBNAIL_DIRECTORY $FULLSIZE_IMAGE_DIRECTORY
 
-$PREVIEW_WIDTH $LEGACY_PREVIEW_WIDTH
+$PREVIEW_WIDTH $LEGACY_PREVIEW_WIDTH $COLLAGE_THUMBNAIL_WIDTH
 
 $IMAGE_API_RECURSE
 
@@ -67,7 +68,20 @@ my $_INTERACTIVE;
 $_WWW_EXEC = 1 if ($ENV{GATEWAY_INTERFACE} || $ENV{REQUEST_METHOD});
 $_INTERACTIVE = 1 if (!$_WWW_EXEC) and (-t STDERR);
 # Configuration processing -------------------------------------------------- #
-my $search_path = cwd();
+# In web context, use logical path (preserving symlinks via SCRIPT_NAME)
+# In CLI context, use physical path (cwd)
+my $search_path;
+if ($_WWW_EXEC && $ENV{SCRIPT_NAME}) {
+    # Extract directory from script path to preserve symlink semantics
+    my $script_dir = $ENV{SCRIPT_NAME};
+    $script_dir =~ s/\/[^\/]+$//;  # Remove /index.cgi or script name
+    $script_dir = "/" if (!$script_dir);  # Handle root case
+    $search_path = $ENV{DOCUMENT_ROOT} . $script_dir;
+} else {
+    # CLI mode: use physical path
+    $search_path = cwd();
+}
+
 while ($search_path ne '/') {
     my $potential_config = "$search_path/$_SITE_CONFIG_NAME";
     if (-f $potential_config) {
@@ -116,12 +130,103 @@ $MEDITATION_FILETYPES = "${MEDITATION_FILETYPES}\$";
 
 # Utility subroutines ------------------------------------------------------- #
 
-# Use to mark sensitive data blocks 
+# Use to mark sensitive data blocks
 # (i.e. for hiding from bad actors using Cloudflare)
 sub secure_data {
 	my $html = shift @_;
 	return "<!--sse-->\n${html}<!--/sse-->\n" if ($CLOUDFLARE);
 	return $html;
+}
+
+# Extract relative subdirectory path by removing base directory prefix
+# Used to derive structure from config variables (e.g., "full" from "res/img/full")
+sub get_relative_subdir {
+	my ($base_dir, $full_path) = @_;
+	return "" unless ($base_dir && $full_path);
+
+	my $relative = $full_path;
+	# Remove base directory prefix, handling trailing slashes
+	$base_dir =~ s/\/$//;
+	$relative =~ s/^\Q$base_dir\E\/?//;
+	return $relative;
+}
+
+# Get legacy preview path with backward compatibility
+# Checks new semantic structure first, falls back to old flat structure
+# Automatically migrates files from old to new location on access (silent migration)
+# Returns the path that exists, or new path if neither exists (for new images)
+sub get_legacy_preview_path {
+	my $basename = shift @_;
+
+	# Check new semantic location (preferred)
+	my $new_path = "${LEGACY_PREVIEW_STANDARD_DIRECTORY}/${basename}.gif";
+	return $new_path if (-f $new_path);
+
+	# Check old flat location (backward compatibility)
+	my $old_path = "${LEGACY_PREVIEW_DIRECTORY}/${basename}.gif";
+	if (-f $old_path) {
+		# Silent migration: Move file to new semantic structure
+		# Create directory if needed
+		unless (-d $LEGACY_PREVIEW_STANDARD_DIRECTORY) {
+			mkdir($LEGACY_PREVIEW_STANDARD_DIRECTORY);
+		}
+
+		# Attempt migration
+		if (rename($old_path, $new_path)) {
+			debug_line("Silently migrated legacy preview: ${basename}.gif");
+			return $new_path;
+		} else {
+			# Migration failed, return old path (still works)
+			debug_line("Failed to migrate legacy preview: ${basename}.gif - $!");
+			return $old_path;
+		}
+	}
+
+	# Neither exists - return new path (will be created during processing)
+	return $new_path;
+}
+
+# Find image by basename, searching both processed and unprocessed locations
+# Searches with priority: processed images first, then unprocessed fallback
+# Returns: ($full_path, $extension, $is_processed)
+#   $full_path: Full filesystem path to the image file
+#   $extension: File extension (jpg, png, gif, etc.)
+#   $is_processed: 1 if from processed directory (has previews), 0 if unprocessed
+sub find_image_by_basename {
+	my ($basename, $search_base) = @_;
+	return (undef, undef, 0) unless $basename;
+
+	# Default search base to IMAGE_DIRECTORY if not specified
+	$search_base = $IMAGE_DIRECTORY unless $search_base;
+
+	# Extract relative structure from config to apply to search base
+	my $fullsize_subdir = get_relative_subdir($IMAGE_DIRECTORY, $FULLSIZE_IMAGE_DIRECTORY);
+	my $local_fullsize_dir = $fullsize_subdir ? "${search_base}/${fullsize_subdir}" : "${search_base}/full";
+
+	my @extensions = ('jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'tif');
+
+	# Priority 1: Check processed images in full/ subdirectory
+	if (-d $local_fullsize_dir) {
+		foreach my $ext (@extensions) {
+			my $test_file = "${local_fullsize_dir}/${basename}.${ext}";
+			if (-f $test_file) {
+				debug_line("Found processed image: ${test_file}");
+				return ($test_file, $ext, 1);
+			}
+		}
+	}
+
+	# Priority 2: Check unprocessed images in base directory
+	foreach my $ext (@extensions) {
+		my $test_file = "${search_base}/${basename}.${ext}";
+		if (-f $test_file) {
+			debug_line("Found unprocessed image: ${test_file}");
+			return ($test_file, $ext, 0);
+		}
+	}
+
+	# Not found
+	return (undef, undef, 0);
 }
 
 # Preformat text and assign an id if provided 
@@ -360,36 +465,35 @@ sub transform_nsi_image_tags {
 			$caption = $1;
 		}
 
-		# Look for the image file in the full-size directory
-		my @extensions = ('jpg', 'jpeg', 'png', 'gif');
-		my $found_file = "";
-		my $found_ext = "";
-
-		foreach my $ext (@extensions) {
-			my $test_file = "${FULLSIZE_IMAGE_DIRECTORY}/${basename}.${ext}";
-			if (-f $test_file) {
-				$found_file = $test_file;
-				$found_ext = $ext;
-				last;
-			}
-		}
+		# Search for image in both processed and unprocessed locations
+		my ($found_file, $found_ext, $is_processed) = find_image_by_basename($basename, $IMAGE_DIRECTORY);
 
 		if ($found_file) {
 			# Build the replacement HTML
-			my $full_path = "${FULLSIZE_IMAGE_DIRECTORY}/${basename}.${found_ext}";
+			my $full_path = $found_file;
 
-			# Use legacy previews (600px GIF) for legacy browsers, standard previews (1024px) for others
-			# Legacy previews are always GIF format for maximum compatibility
-			my $preview_path = ($_BROWSER_TIER eq 'legacy')
-			                   ? "${LEGACY_PREVIEW_DIRECTORY}/${basename}.gif"
-			                   : "${PREVIEW_DIRECTORY}/${basename}.${found_ext}";
+			if ($is_processed) {
+				# Processed image: has previews available
+				# Use legacy previews (600px GIF) for legacy browsers, standard previews (1024px) for others
+				# Legacy previews are always GIF format for maximum compatibility
+				# Backward compatible: checks both new semantic structure and old flat structure
+				my $preview_path = ($_BROWSER_TIER eq 'legacy')
+				                   ? get_legacy_preview_path($basename)
+				                   : "${PREVIEW_DIRECTORY}/${basename}.${found_ext}";
 
-			$replacement = "<DIV CLASS=\"nsi-image\">\n";
-			$replacement .= "  <A HREF=\"${full_path}\">\n";
-			$replacement .= "    <IMG SRC=\"${preview_path}\" ALT=\"${alt_text}\">\n";
-			$replacement .= "  </A>\n";
+				$replacement = "<DIV CLASS=\"nsi-image\">\n";
+				$replacement .= "  <A HREF=\"${full_path}\">\n";
+				$replacement .= "    <IMG SRC=\"${preview_path}\" ALT=\"${alt_text}\">\n";
+				$replacement .= "  </A>\n";
+			} else {
+				# Unprocessed image: no previews, serve original directly
+				$replacement = "<DIV CLASS=\"nsi-image\">\n";
+				$replacement .= "  <A HREF=\"${full_path}\">\n";
+				$replacement .= "    <IMG SRC=\"${full_path}\" ALT=\"${alt_text}\">\n";
+				$replacement .= "  </A>\n";
+			}
 
-			# Add caption if provided
+			# Add caption if provided (applies to both processed and unprocessed)
 			if ($caption) {
 				if ($CENTER_IMAGE_CAPTIONS) {
 					$replacement .= "  <CENTER><P CLASS=\"nsi-caption\">${caption}</P></CENTER>\n";
@@ -400,8 +504,8 @@ sub transform_nsi_image_tags {
 
 			$replacement .= "</DIV>\n";
 		} else {
-			# Image not found - leave original tag or show error
-			$replacement = "<!-- NSI: Image '${basename}' not found in ${FULLSIZE_IMAGE_DIRECTORY} -->\n";
+			# Image not found - show error
+			$replacement = "<!-- NSI: Image '${basename}' not found in processed or unprocessed directories -->\n";
 			$replacement .= "<I>[Image: ${basename} (not found)]</I>";
 		}
 
@@ -437,6 +541,17 @@ sub transform_nsi_collage_tags {
 		# this provides the widest compatibility.
 		foreach my $img (@images) {
 			$img =~ s/<IMG\s+/<IMG WIDTH="100%" /gi;
+		}
+
+		# For legacy browsers in collages, use smaller collage thumbnails (300px)
+		# instead of standard legacy previews (600px) for better fit
+		if ($_BROWSER_TIER eq 'legacy') {
+			foreach my $img (@images) {
+				# Replace legacy preview paths with collage thumbnail paths
+				# Handles both old flat structure and new semantic structure
+				$img =~ s{/previews/legacy/standard/([^/]+)\.gif}{/previews/legacy/collage/$1.gif}g;
+				$img =~ s{/previews/legacy/([^/]+)\.gif}{/previews/legacy/collage/$1.gif}g;
+			}
 		}
 
 		# Determine layout type and build table
@@ -1029,7 +1144,13 @@ sub process_page_images {
     return unless -d $img_dir;
     
     # Create subdirectories if they don't exist
-    my @subdirs = ($FULLSIZE_IMAGE_DIRECTORY, $PREVIEW_DIRECTORY, $LEGACY_PREVIEW_DIRECTORY);
+    my @subdirs = (
+        $FULLSIZE_IMAGE_DIRECTORY,
+        $PREVIEW_DIRECTORY,
+        $LEGACY_PREVIEW_DIRECTORY,
+        $LEGACY_PREVIEW_STANDARD_DIRECTORY,
+        $COLLAGE_THUMBNAIL_DIRECTORY
+    );
     foreach my $dir (@subdirs) {
 	debug_line("Check for subdirectory: ${dir}");
         mkdir($dir) or debug_line("Attempt to create required directory '${dir}' failed: $!") and return
@@ -1039,23 +1160,133 @@ sub process_page_images {
     # Move loose files to fullsized folder and generate previews
     debug_line("Checking for loose files in '${img_dir}'...");
     opendir(my $dh, $img_dir) or return;
-    my @loose_files = grep { 
-        -f "$img_dir/$_" && /\.(jpg|jpeg|png|gif|bmp|tiff?)$/i 
+    my @loose_files = grep {
+        -f "$img_dir/$_" && /\.(jpg|jpeg|png|gif|bmp|tiff?)$/i
     } readdir($dh);
     closedir($dh);
     debug_line("Found " . scalar @loose_files . " loose file(s).");
-   
+
+    my $processed_count = 0;
 
     foreach my $file (@loose_files) {
-	debug_line("Moving lose file '${file}' to '${FULLSIZE_IMAGE_DIRECTORY}' for processing...");	
+	debug_line("Moving lose file '${file}' to '${FULLSIZE_IMAGE_DIRECTORY}' for processing...");
         my $source = "$img_dir/$file";
         my $dest = "$FULLSIZE_IMAGE_DIRECTORY/$file";
-        
+
         # Move to fullsize directory if not already there
         if (rename($source, $dest)) {
             generate_image_previews($dest, $file);
+            print "." if ($_INTERACTIVE);  # Progress indicator
+            $processed_count++;
         }
     }
+
+    # Scan fullsize directory for images missing previews
+    debug_line("Scanning fullsize directory for images with missing previews...");
+    return unless -d $FULLSIZE_IMAGE_DIRECTORY;
+
+    opendir(my $full_dh, $FULLSIZE_IMAGE_DIRECTORY) or return;
+    my @full_images = grep {
+        -f "$FULLSIZE_IMAGE_DIRECTORY/$_" && /\.(jpg|jpeg|png|gif|bmp|tiff?)$/i
+    } readdir($full_dh);
+    closedir($full_dh);
+    debug_line("Found " . scalar @full_images . " image(s) in fullsize directory.");
+
+    foreach my $file (@full_images) {
+        my $full_path = "$FULLSIZE_IMAGE_DIRECTORY/$file";
+        my ($basename, $ext) = $file =~ /^(.+)\.([^.]+)$/;
+        next unless $basename;
+
+        # Check if any preview variants are missing
+        my $missing_previews = 0;
+
+        # Check standard preview (maintains original format for transparency)
+        my $has_transparency = ($ext =~ /^(png|gif)$/i);
+        my $preview_ext = $has_transparency ? "png" : "jpg";
+        my $standard_preview = "$PREVIEW_DIRECTORY/${basename}.${preview_ext}";
+        unless (-f $standard_preview) {
+            debug_line("Missing standard preview for '${file}'");
+            $missing_previews = 1;
+        }
+
+        # Check legacy preview (always GIF, check both old and new locations)
+        my $legacy_new = "$LEGACY_PREVIEW_STANDARD_DIRECTORY/${basename}.gif";
+        my $legacy_old = "$LEGACY_PREVIEW_DIRECTORY/${basename}.gif";
+        unless (-f $legacy_new || -f $legacy_old) {
+            debug_line("Missing legacy preview for '${file}'");
+            $missing_previews = 1;
+        }
+
+        # Check collage thumbnail (always GIF)
+        my $collage_thumb = "$COLLAGE_THUMBNAIL_DIRECTORY/${basename}.gif";
+        unless (-f $collage_thumb) {
+            debug_line("Missing collage thumbnail for '${file}'");
+            $missing_previews = 1;
+        }
+
+        # Regenerate all previews if any are missing
+        if ($missing_previews) {
+            debug_line("Regenerating previews for '${file}'...");
+            generate_image_previews($full_path, $file);
+            print "." if ($_INTERACTIVE);  # Progress indicator
+            $processed_count++;
+        }
+    }
+
+    # Finish progress line
+    print "\n" if ($_INTERACTIVE && $processed_count > 0);
+
+    # Bulk migration of remaining legacy previews (maintenance mode only)
+    # Migrate any stragglers that weren't caught by on-access migration
+    if ($_INTERACTIVE && -d $LEGACY_PREVIEW_DIRECTORY) {
+        debug_line("Scanning for unmigrated legacy previews...");
+
+        opendir(my $legacy_dh, $LEGACY_PREVIEW_DIRECTORY);
+        my @legacy_gifs = grep {
+            -f "$LEGACY_PREVIEW_DIRECTORY/$_" && /\.gif$/i
+        } readdir($legacy_dh);
+        closedir($legacy_dh);
+
+        my $migrated_count = 0;
+
+        if (@legacy_gifs) {
+            print "Migrating " . scalar(@legacy_gifs) . " legacy preview(s) to new structure...\n";
+
+            # Ensure target directory exists
+            unless (-d $LEGACY_PREVIEW_STANDARD_DIRECTORY) {
+                mkdir($LEGACY_PREVIEW_STANDARD_DIRECTORY);
+            }
+
+            foreach my $file (@legacy_gifs) {
+                my $old_path = "$LEGACY_PREVIEW_DIRECTORY/$file";
+                my $new_path = "$LEGACY_PREVIEW_STANDARD_DIRECTORY/$file";
+
+                # Skip if target already exists (newer file wins)
+                unless (-f $new_path) {
+                    if (rename($old_path, $new_path)) {
+                        debug_line("Migrated legacy preview: $file");
+                        print ".";
+                        $migrated_count++;
+                    } else {
+                        debug_line("Failed to migrate $file: $!");
+                    }
+                } else {
+                    debug_line("Skipped $file - newer version exists in target");
+                    # Remove old file since new one exists
+                    unlink($old_path);
+                }
+            }
+
+            print "\n" if $migrated_count > 0;
+            print "Successfully migrated $migrated_count legacy preview(s).\n";
+        } else {
+            debug_line("No unmigrated legacy previews found.");
+        }
+    }
+
+    # Clean up orphaned previews
+    debug_line("Checking for orphaned previews...");
+    cleanup_orphaned_previews();
 }
 
 # Generate previews in the local image directory using server-side tools
@@ -1121,9 +1352,14 @@ sub generate_image_previews {
     }
     
     # Generate legacy GIF preview (width-constrained for 640x480 displays)
-    my $legacy_path = "$legacy_dir/${basename}.gif";
-    
-    unless (-f $legacy_path) {
+    # Check new semantic location first, fall back to old location
+    my $legacy_standard_dir = $LEGACY_PREVIEW_STANDARD_DIRECTORY || $legacy_dir;
+    my $legacy_path = "$legacy_standard_dir/${basename}.gif";
+    my $old_legacy_path = "$legacy_dir/${basename}.gif";
+
+    # Generate in new location if it doesn't exist anywhere
+    unless (-f $legacy_path || -f $old_legacy_path) {
+        mkdir $legacy_standard_dir unless -d $legacy_standard_dir;
         if ($has_imagemagick) {
             # Web-safe colors for old displays, width-based sizing
             system("convert '$full_path' -resize '${legacy_width}>' " .
@@ -1134,6 +1370,105 @@ sub generate_image_previews {
                    "-dither -colors 216 '$legacy_path' 2>/dev/null");
         }
     }
+
+    # Generate collage thumbnails (small GIF for legacy browser collages)
+    my $collage_width = $COLLAGE_THUMBNAIL_WIDTH || "300";
+    my $collage_dir = $COLLAGE_THUMBNAIL_DIRECTORY || "${legacy_dir}/collage";
+    my $collage_path = "$collage_dir/${basename}.gif";
+    debug_line("Collage thumbnail dimensions: x${collage_width}");
+
+    unless (-f $collage_path) {
+        mkdir $collage_dir unless -d $collage_dir;
+        if ($has_imagemagick) {
+            # Small GIF optimized for collages on legacy browsers
+            system("convert '$full_path' -resize '${collage_width}>' " .
+                   "-dither FloydSteinberg -colors 216 " .
+                   "'$collage_path' 2>/dev/null");
+        } elsif ($has_gm) {
+            system("gm convert '$full_path' -resize '${collage_width}>' " .
+                   "-dither -colors 216 '$collage_path' 2>/dev/null");
+        }
+    }
+}
+
+# Clean up orphaned preview files
+# Scans all preview directories and removes files whose fullsize originals no longer exist
+sub cleanup_orphaned_previews {
+    debug_line("Entering subroutine: cleanup_orphaned_previews()");
+
+    return unless -d $FULLSIZE_IMAGE_DIRECTORY;
+
+    my @preview_dirs = (
+        { path => $PREVIEW_DIRECTORY, type => 'standard', pattern => qr/\.(jpg|jpeg|png|gif)$/i },
+        { path => $LEGACY_PREVIEW_STANDARD_DIRECTORY, type => 'legacy standard', pattern => qr/\.gif$/i },
+        { path => $LEGACY_PREVIEW_DIRECTORY, type => 'legacy (old location)', pattern => qr/\.gif$/i },
+        { path => $COLLAGE_THUMBNAIL_DIRECTORY, type => 'collage thumbnail', pattern => qr/\.gif$/i }
+    );
+
+    my $total_removed = 0;
+    my $total_size_freed = 0;
+
+    foreach my $dir_info (@preview_dirs) {
+        my $preview_dir = $dir_info->{path};
+        my $dir_type = $dir_info->{type};
+        my $pattern = $dir_info->{pattern};
+
+        next unless -d $preview_dir;
+
+        debug_line("Scanning ${dir_type} preview directory: ${preview_dir}");
+
+        opendir(my $dh, $preview_dir) or next;
+        my @previews = grep { -f "$preview_dir/$_" && /$pattern/ } readdir($dh);
+        closedir($dh);
+
+        foreach my $preview_file (@previews) {
+            # Extract basename (remove extension)
+            my ($basename) = $preview_file =~ /^(.+)\.[^.]+$/;
+            next unless $basename;
+
+            # Check if corresponding fullsize image exists (any supported format)
+            my @fullsize_extensions = ('jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'tif');
+            my $fullsize_exists = 0;
+
+            foreach my $ext (@fullsize_extensions) {
+                if (-f "$FULLSIZE_IMAGE_DIRECTORY/${basename}.${ext}") {
+                    $fullsize_exists = 1;
+                    last;
+                }
+            }
+
+            # Remove orphaned preview if fullsize doesn't exist
+            unless ($fullsize_exists) {
+                my $preview_path = "$preview_dir/$preview_file";
+                my $file_size = -s $preview_path || 0;
+
+                if (unlink($preview_path)) {
+                    debug_line("Removed orphaned ${dir_type} preview: ${preview_file}");
+                    print "Removed orphaned ${dir_type} preview: ${preview_file}\n" if ($_INTERACTIVE);
+                    $total_removed++;
+                    $total_size_freed += $file_size;
+                } else {
+                    debug_line("Failed to remove orphaned preview ${preview_file}: $!");
+                }
+            }
+        }
+    }
+
+    if ($total_removed > 0 && $_INTERACTIVE) {
+        my $size_str = "";
+        if ($total_size_freed >= 1048576) {  # 1MB
+            $size_str = sprintf(" (%.2f MB freed)", $total_size_freed / 1048576);
+        } elsif ($total_size_freed >= 1024) {  # 1KB
+            $size_str = sprintf(" (%.2f KB freed)", $total_size_freed / 1024);
+        } elsif ($total_size_freed > 0) {
+            $size_str = sprintf(" (%d bytes freed)", $total_size_freed);
+        }
+        print "Cleanup complete: removed ${total_removed} orphaned preview(s)${size_str}\n";
+    } elsif ($_INTERACTIVE) {
+        debug_line("No orphaned previews found.");
+    }
+
+    return $total_removed;
 }
 
 # Get random image and return the file path
@@ -1143,15 +1478,37 @@ sub random_image {
     return random_image_recursive();
   }
 
-  # Otherwise, only search current directory's API image directory
+  # Otherwise, search API image directory (both processed and unprocessed)
   return if (! -d $API_IMAGE_DIRECTORY);
-  opendir(IMAGES,$API_IMAGE_DIRECTORY) or die $!;
-  my @images = grep /$IMAGE_FILETYPES/, readdir(IMAGES);
-  closedir(IMAGES);
+
+  # Extract relative structure from config and apply to API directory
+  my $fullsize_subdir = get_relative_subdir($IMAGE_DIRECTORY, $FULLSIZE_IMAGE_DIRECTORY);
+  my $api_fullsize_dir = $fullsize_subdir ? "${API_IMAGE_DIRECTORY}/${fullsize_subdir}" : "${API_IMAGE_DIRECTORY}/full";
+
+  # Image file pattern
+  my $image_pattern = qr/\.(jpg|jpeg|png|gif|bmp|tiff?)$/i;
+
+  my @images;
+
+  # Priority 1: Collect processed images from full/ subdirectory
+  if (-d $api_fullsize_dir) {
+    opendir(my $dh, $api_fullsize_dir) or return;
+    my @processed = grep { -f "$api_fullsize_dir/$_" && /$image_pattern/ } readdir($dh);
+    closedir($dh);
+    push @images, map { "$api_fullsize_dir/$_" } @processed;
+  }
+
+  # Priority 2: Collect unprocessed images from base directory
+  opendir(my $dh, $API_IMAGE_DIRECTORY) or return;
+  my @unprocessed = grep { -f "$API_IMAGE_DIRECTORY/$_" && /$image_pattern/ } readdir($dh);
+  closedir($dh);
+  push @images, map { "$API_IMAGE_DIRECTORY/$_" } @unprocessed;
+
+  # Select random image from combined list
   my $image_count = scalar @images;
   return if (!$image_count);
   my $selection = int(rand($image_count));
-  return "$API_IMAGE_DIRECTORY/$images[$selection]";
+  return $images[$selection];
 }
 
 # Get random image recursively from directory tree and return the file path
@@ -1160,6 +1517,13 @@ sub random_image_recursive {
   return if (!$dir);
 
   my @all_images;
+
+  # Extract relative structure from config
+  my $fullsize_subdir = get_relative_subdir($IMAGE_DIRECTORY, $FULLSIZE_IMAGE_DIRECTORY);
+  $fullsize_subdir = "full" unless $fullsize_subdir;
+
+  # Image file pattern
+  my $image_pattern = qr/\.(jpg|jpeg|png|gif|bmp|tiff?)$/i;
 
   # Helper function to recursively find image files
   my $find_images;
@@ -1175,10 +1539,22 @@ sub random_image_recursive {
       if (-d $path) {
         # Check if this directory is an API image directory
         if ($entry eq basename($API_IMAGE_DIRECTORY)) {
+          # Search both processed and unprocessed locations
+          my $fullsize_path = "$path/$fullsize_subdir";
+
+          # Priority 1: Processed images from full/ subdirectory
+          if (-d $fullsize_path) {
+            opendir(my $pdh, $fullsize_path) or next;
+            my @processed = grep { -f "$fullsize_path/$_" && /$image_pattern/ } readdir($pdh);
+            closedir($pdh);
+            push @all_images, map { "$fullsize_path/$_" } @processed;
+          }
+
+          # Priority 2: Unprocessed images from base directory
           opendir(my $pdh, $path) or next;
-          my @images = grep { /$IMAGE_FILETYPES/ } readdir($pdh);
+          my @unprocessed = grep { -f "$path/$_" && /$image_pattern/ } readdir($pdh);
           closedir($pdh);
-          push @all_images, map { "$path/$_" } @images;
+          push @all_images, map { "$path/$_" } @unprocessed;
         }
         # Recursively search subdirectories
         $find_images->($path);
@@ -1335,21 +1711,40 @@ sub random_image_from_path {
     return random_image_recursive($target_dir);
   }
 
-  # Otherwise, only search the target directory's API image directory
+  # Otherwise, search target directory's API image directory (both processed and unprocessed)
   # Look for API image directory within the target
   my $image_dir = "${target_dir}/${API_IMAGE_DIRECTORY}";
   return if (! -d $image_dir);
 
-  # Get images from this directory
-  opendir(my $dh, $image_dir) or return;
-  my @images = grep { /$IMAGE_FILETYPES/ } readdir($dh);
-  closedir($dh);
+  # Extract relative structure from config and apply to target directory
+  my $fullsize_subdir = get_relative_subdir($IMAGE_DIRECTORY, $FULLSIZE_IMAGE_DIRECTORY);
+  my $fullsize_dir = $fullsize_subdir ? "${image_dir}/${fullsize_subdir}" : "${image_dir}/full";
 
+  # Image file pattern
+  my $image_pattern = qr/\.(jpg|jpeg|png|gif|bmp|tiff?)$/i;
+
+  my @images;
+
+  # Priority 1: Collect processed images from full/ subdirectory
+  if (-d $fullsize_dir) {
+    opendir(my $dh, $fullsize_dir) or return;
+    my @processed = grep { -f "$fullsize_dir/$_" && /$image_pattern/ } readdir($dh);
+    closedir($dh);
+    push @images, map { "$fullsize_dir/$_" } @processed;
+  }
+
+  # Priority 2: Collect unprocessed images from base directory
+  opendir(my $dh, $image_dir) or return;
+  my @unprocessed = grep { -f "$image_dir/$_" && /$image_pattern/ } readdir($dh);
+  closedir($dh);
+  push @images, map { "$image_dir/$_" } @unprocessed;
+
+  # Select random image from combined list
   my $image_count = scalar @images;
   return if (!$image_count);
 
   my $selection = int(rand($image_count));
-  return "${image_dir}/$images[$selection]";
+  return $images[$selection];
 }
 
 # URL decode and handle UTF-8 properly
@@ -1536,13 +1931,94 @@ HELP
     
     print "Processing images in: $target\n";
     debug_line("Starting image processing in: $target");
-    
+
     # Set up image directory paths relative to current location
     $IMAGE_DIRECTORY = "./res/img" unless $IMAGE_DIRECTORY;
     $FULLSIZE_IMAGE_DIRECTORY = "${IMAGE_DIRECTORY}/full" unless $FULLSIZE_IMAGE_DIRECTORY;
     $PREVIEW_DIRECTORY = "${IMAGE_DIRECTORY}/previews" unless $PREVIEW_DIRECTORY;
     $LEGACY_PREVIEW_DIRECTORY = "${PREVIEW_DIRECTORY}/legacy" unless $LEGACY_PREVIEW_DIRECTORY;
-    
+
+    # Count images to be processed
+    my $total_to_process = 0;
+    my $loose_count = 0;
+    my $missing_preview_count = 0;
+    my $total_size = 0;
+
+    # Count loose files in base directory
+    if (-d $IMAGE_DIRECTORY) {
+        opendir(my $dh, $IMAGE_DIRECTORY);
+        my @loose = grep { -f "$IMAGE_DIRECTORY/$_" && /\.(jpg|jpeg|png|gif|bmp|tiff?)$/i } readdir($dh);
+        closedir($dh);
+        $loose_count = scalar @loose;
+
+        # Track file sizes
+        foreach my $file (@loose) {
+            $total_size += -s "$IMAGE_DIRECTORY/$file" || 0;
+        }
+    }
+
+    # Count images in fullsize directory needing preview regeneration
+    if (-d $FULLSIZE_IMAGE_DIRECTORY) {
+        opendir(my $dh, $FULLSIZE_IMAGE_DIRECTORY);
+        my @full_images = grep { -f "$FULLSIZE_IMAGE_DIRECTORY/$_" && /\.(jpg|jpeg|png|gif|bmp|tiff?)$/i } readdir($dh);
+        closedir($dh);
+
+        foreach my $file (@full_images) {
+            my ($basename, $ext) = $file =~ /^(.+)\.([^.]+)$/;
+            next unless $basename;
+
+            # Check if any previews are missing
+            my $has_transparency = ($ext =~ /^(png|gif)$/i);
+            my $preview_ext = $has_transparency ? "png" : "jpg";
+            my $standard_preview = "$PREVIEW_DIRECTORY/${basename}.${preview_ext}";
+            my $legacy_new = "$LEGACY_PREVIEW_STANDARD_DIRECTORY/${basename}.gif";
+            my $legacy_old = "$LEGACY_PREVIEW_DIRECTORY/${basename}.gif";
+            my $collage_thumb = "$COLLAGE_THUMBNAIL_DIRECTORY/${basename}.gif";
+
+            unless ((-f $standard_preview) && ((-f $legacy_new) || (-f $legacy_old)) && (-f $collage_thumb)) {
+                $missing_preview_count++;
+                # Track file size
+                $total_size += -s "$FULLSIZE_IMAGE_DIRECTORY/$file" || 0;
+            }
+        }
+    }
+
+    $total_to_process = $loose_count + $missing_preview_count;
+
+    if ($total_to_process > 0) {
+        # Format file size
+        my $size_str = "";
+        my $avg_str = "";
+        if ($total_size > 0) {
+            if ($total_size >= 1073741824) {  # 1GB
+                $size_str = sprintf("%.2f GB", $total_size / 1073741824);
+            } elsif ($total_size >= 1048576) {  # 1MB
+                $size_str = sprintf("%.2f MB", $total_size / 1048576);
+            } elsif ($total_size >= 1024) {  # 1KB
+                $size_str = sprintf("%.2f KB", $total_size / 1024);
+            } else {
+                $size_str = sprintf("%d bytes", $total_size);
+            }
+
+            my $avg_size = $total_size / $total_to_process;
+            if ($avg_size >= 1048576) {  # 1MB
+                $avg_str = sprintf("%.2f MB", $avg_size / 1048576);
+            } elsif ($avg_size >= 1024) {  # 1KB
+                $avg_str = sprintf("%.2f KB", $avg_size / 1024);
+            } else {
+                $avg_str = sprintf("%d bytes", $avg_size);
+            }
+        }
+
+        print "Found $total_to_process image(s) to process";
+        print " ($size_str total, $avg_str average)" if $size_str;
+        print ":\n";
+        print "  - $loose_count loose file(s) to move and process\n" if $loose_count > 0;
+        print "  - $missing_preview_count image(s) with missing previews\n" if $missing_preview_count > 0;
+    } else {
+        print "No images require processing.\n";
+    }
+
     # Call the image processing function
     process_page_images();
     

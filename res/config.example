@@ -60,6 +60,10 @@ $IMAGE_DIRECTORY           = "${RESOURCE_DIRECTORY}/img";
 $FULLSIZE_IMAGE_DIRECTORY  = "${IMAGE_DIRECTORY}/full";
 $PREVIEW_DIRECTORY         = "${IMAGE_DIRECTORY}/previews";
 $LEGACY_PREVIEW_DIRECTORY  = "${PREVIEW_DIRECTORY}/legacy";
+# New semantic structure: legacy previews organized by use case
+# Maintains backward compatibility - checks both locations
+$LEGACY_PREVIEW_STANDARD_DIRECTORY = "${LEGACY_PREVIEW_DIRECTORY}/standard";
+$COLLAGE_THUMBNAIL_DIRECTORY       = "${LEGACY_PREVIEW_DIRECTORY}/collage";
 $MEDITATION_DIRECTORY      = "${IMAGE_DIRECTORY}/meditations";
 $SITE_RESOURCE_DIRECTORY   = "/res";
 $SITE_SYSRES_DIRECTORY     = "${SITE_RESOURCE_DIRECTORY}/sys";
@@ -102,6 +106,7 @@ $LEGACY_STYLESHEET    = "${SITE_STYLE_DIRECTORY}/legacy.css";
 $MEDITATION_FILETYPES = ".gif|.jpg|.png";
 $PREVIEW_WIDTH        = "1024";
 $LEGACY_PREVIEW_WIDTH = "600";
+$COLLAGE_THUMBNAIL_WIDTH = "300";  # Small thumbnails for collages on legacy browsers
 $IMAGE_API_RECURSE    = 1; # API searches subdirectories recursively (1=yes, 0=no)
 # -----------------------------------------------------------------------------
 1 # Expression must be evaluated to pass load check

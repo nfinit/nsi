@@ -20,13 +20,14 @@ $API_ENABLED  = 1;
 # Display preferences							display
 # -----------------------------------------------------------------------------
 $DYNAMIC_LANDING =  0; # Generate a dynamic landing (home) page if no content
-$NAVIGATION_MENU =  1; # Display a site navigation menu
-$ROOT_NAVIGATION =  0; # Display site navigation on home page
-$TOC_NAV         =  1; # Use table of contents of parent page for navigation
-$ROOT_TOC_NAV    =  0; # Use table of contents of home page only for navigation
+$NAVIGATION_MENU =  1; # Display breadcrumb navigation menu
+$ROOT_NAVIGATION =  0; # Display navigation on home page
+$TOC_NAV         =  1; # DEPRECATED: No longer used (breadcrumb navigation)
+$ROOT_TOC_NAV    =  0; # DEPRECATED: No longer used (breadcrumb navigation)
 $NAV_POSITION    =  1; # Site navigation position (top: 1, bottom: -1, none: 0)
 $FOOTER_NAV      =  1; # Enable navigation controls in the page footer
 $FOOTER_TOP_LINK =  1; # Show "Back to top" link in footer
+$BREADCRUMB_SEPARATOR = " &gt; ";  # Separator between breadcrumb items
 $CENTER_TITLE    =  0; # Force center page title
 $AUTO_RULE       =  1; # Draw rule separators between dynamic components
 $LIST_UL         =  1; # Bullet tables of contents and other dynamic lists

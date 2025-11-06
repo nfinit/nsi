@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- #
-my $version = '2.15.3';
+my $version = '2.16.0';
 # --------------------------------------------------------------------------- #
 
 $_SITE_CONFIG_NAME = "res/config.pl";
@@ -31,7 +31,7 @@ $DYNAMIC_LANDING
 
 $HTML_DOCTYPE $CLOUDFLARE
 
-$NAVIGATION_MENU $ROOT_NAVIGATION $TOC_NAV $ROOT_TOC_NAV $NAV_POSITION $FOOTER_NAV $FOOTER_TOP_LINK
+$NAVIGATION_MENU $ROOT_NAVIGATION $TOC_NAV $ROOT_TOC_NAV $NAV_POSITION $FOOTER_NAV $FOOTER_TOP_LINK $BREADCRUMB_SEPARATOR
 
 $CENTER_TITLE $AUTO_RULE $SUB_LOGO $TREE_TOC $LIST_UL $WRAP_SCRIPT_OUTPUT
 
@@ -129,6 +129,9 @@ $MEDITATION_FILETYPES = "${MEDITATION_FILETYPES}\$";
 
 # Set default home page title if not configured
 $HOME_PAGE_TITLE = "Home" unless $HOME_PAGE_TITLE;
+
+# Set default breadcrumb separator if not configured
+$BREADCRUMB_SEPARATOR = " &gt; " unless $BREADCRUMB_SEPARATOR;
 
 
 # Utility subroutines ------------------------------------------------------- #
@@ -681,6 +684,44 @@ sub get_parent_title {
 	return "..";
 }
 
+# Get title for a specific directory path (for breadcrumb navigation)
+# Checks .title, then .info (first line), then returns directory name
+sub get_title_for_path {
+	my $dir_path = shift @_;
+	return "" unless $dir_path;
+
+	# Normalize path
+	$dir_path =~ s/\/$//;
+
+	# Check for .title file
+	my $title_file = "${dir_path}/${TITLE_FILE}";
+	if (-f $title_file) {
+		if (open(my $fh, '<', $title_file)) {
+			my $title = <$fh>;
+			close($fh);
+			chomp($title) if ($title);
+			return $title if ($title);
+		}
+	}
+
+	# Check for .info file (first line)
+	my $info_file = "${dir_path}/${TOC_FILE}";
+	if (-f $info_file) {
+		if (open(my $fh, '<', $info_file)) {
+			my $title = <$fh>;
+			close($fh);
+			chomp($title) if ($title);
+			return $title if ($title);
+		}
+	}
+
+	# Fallback to directory name
+	my $dir_name = basename($dir_path);
+	return $dir_name if $dir_name;
+
+	return "";
+}
+
 sub get_page_title {
   my $title = "";
   if ($BODY_FILE) {
@@ -948,67 +989,89 @@ sub cwd_nested_in {
 }
 
 sub navigation_menu {
-  return if (!$NAVIGATION_MENU);
+	return if (!$NAVIGATION_MENU);
+
 	# Normalize paths for comparison (handle trailing slash differences)
 	my $current_dir = get_logical_cwd();
 	my $doc_root = $ENV{DOCUMENT_ROOT};
 	$current_dir =~ s/\/$//;
 	$doc_root =~ s/\/$//;
+
+	# Don't show navigation at root unless explicitly enabled
 	return if (!$ROOT_NAVIGATION && $current_dir eq $doc_root);
-  my $menu;
-  my @menu_items;
-  if ($TOC_NAV) {
-    my @TOC;
-    my $toc_target;
-    if ($ROOT_TOC_NAV) {
-      $toc_target = $ENV{DOCUMENT_ROOT};
-      $toc_target =~ /\/$/;
-    } else {
-      $toc_target = get_logical_cwd();
-      # Don't traverse above DOCUMENT_ROOT - prevents picking up
-      # sibling sites/directories outside the web root
-      # Strip trailing slashes for comparison
-      my $normalized_target = $toc_target;
-      my $normalized_root = $ENV{DOCUMENT_ROOT};
-      $normalized_target =~ s/\/$//;
-      $normalized_root =~ s/\/$//;
-      if ($normalized_target eq $normalized_root) {
-        # At root, use current directory (shows children, not siblings)
-        # $toc_target already set to current directory above
-      } else {
-        $toc_target = dirname($toc_target);
-      }
-    }
-    @TOC = toc($toc_target);
-    return if (!@TOC);
-    my @nav_items = ([$HOME_PAGE_TITLE,'/']);
-	  push(@nav_items,@TOC);
-    my $item_count = 0;
-    foreach my $toc_link (@nav_items) {
-      my $list_item;
-      my $item_name = @$toc_link[0];
-      my $item_path = @$toc_link[1];
-      next if (!$item_name);
-      next if (!$item_path);
-      $item_count++;
-      $list_item .= "${item_name}";
-      if ("$ENV{DOCUMENT_ROOT}${item_path}" eq get_logical_cwd() . '/') {
-        $list_item = "<I>${list_item}</I>";
-      } elsif (cwd_nested_in($item_path) && ($item_path ne '/')) {
-        #$list_item = "<I>${list_item}</I>";
-        $list_item = "<B><A HREF=\"${item_path}\">${list_item}</A></B>";
-      } else {
-        $list_item = "<A HREF=\"${item_path}\">${list_item}</A>";
-      }
-		  $list_item = $LINE_ELEMENT_DIVIDER . $list_item
-        if ($LINE_ELEMENTS && $item_count > 1);
-      $list_item = "<SPAN CLASS=\"navigation_item\">${list_item}</SPAN>\n";
-      $menu .= $list_item;
-    }
-  }
-  $menu = auto_hr() . $menu;
-  $menu = "<DIV ID=\"navigation\" CLASS=\"no_print\">\n${menu}</DIV>\n";
-  return ($menu);
+
+	# Build breadcrumb trail from root to current location
+	my @breadcrumbs;
+
+	# Always start with Home
+	push @breadcrumbs, {
+		title => $HOME_PAGE_TITLE,
+		path => '/',
+		is_current => ($current_dir eq $doc_root)
+	};
+
+	# If not at root, build path segments
+	if ($current_dir ne $doc_root) {
+		# Get relative path from root
+		my $relative_path = $current_dir;
+		$relative_path =~ s/^\Q$doc_root\E\/?//;
+
+		# Split into segments
+		my @segments = split(/\//, $relative_path);
+
+		# Build cumulative path and create breadcrumb for each segment
+		my $cumulative_path = $doc_root;
+		for (my $i = 0; $i < @segments; $i++) {
+			my $segment = $segments[$i];
+			next unless $segment;  # Skip empty segments
+
+			$cumulative_path .= "/$segment";
+			my $url_path = $cumulative_path;
+			$url_path =~ s/^\Q$doc_root\E//;
+			$url_path = '/' if (!$url_path);
+
+			# Get title for this segment
+			my $title = get_title_for_path($cumulative_path);
+			$title = $segment unless $title;  # Fallback to directory name
+
+			# Check if this is the current page
+			my $is_current = ($i == $#segments);
+
+			push @breadcrumbs, {
+				title => $title,
+				path => $url_path,
+				is_current => $is_current
+			};
+		}
+	}
+
+	# Build HTML for breadcrumbs
+	my $menu = "";
+	for (my $i = 0; $i < @breadcrumbs; $i++) {
+		my $crumb = $breadcrumbs[$i];
+		my $item = "";
+
+		# Add separator before all items except the first
+		if ($i > 0) {
+			$item .= $BREADCRUMB_SEPARATOR;
+		}
+
+		# Current page: plain text (no link)
+		if ($crumb->{is_current}) {
+			$item .= $crumb->{title};
+		} else {
+			# Other pages: linked
+			$item .= "<A HREF=\"$crumb->{path}\">$crumb->{title}</A>";
+		}
+
+		$item = "<SPAN CLASS=\"breadcrumb_item\">${item}</SPAN>";
+		$menu .= $item;
+	}
+
+	# Wrap in navigation div with horizontal rules
+	$menu = "<DIV ID=\"navigation\" CLASS=\"no_print\">\n${menu}\n</DIV>\n";
+	$menu = auto_hr() . $menu . auto_hr();
+	return ($menu);
 }
 
 # Footer subroutines -------------------------------------------------------- #

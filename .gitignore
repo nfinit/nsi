@@ -1,0 +1,11 @@
+# NSI development/testing
+sandbox/
+AGENTS/
+.kiro/
+
+# Site-specific configuration
+res/config.pl
+
+# macOS
+.DS_Store
+._*

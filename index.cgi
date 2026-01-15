@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- #
-my $version = '2.16.0.4';
+my $version = '2.17.0.0';
 # --------------------------------------------------------------------------- #
 
 $_SITE_CONFIG_NAME = "res/config.pl";
@@ -27,11 +27,9 @@ $PAGE_TITLE $PAGE_INTRO
 
 $SITE_VARS
 
-$DYNAMIC_LANDING
-
 $HTML_DOCTYPE $CLOUDFLARE
 
-$NAVIGATION_MENU $ROOT_NAVIGATION $TOC_NAV $ROOT_TOC_NAV $NAV_POSITION $FOOTER_NAV $FOOTER_TOP_LINK $BREADCRUMB_SEPARATOR
+$NAVIGATION_MENU $ROOT_NAVIGATION $NAV_POSITION $FOOTER_NAV $FOOTER_TOP_LINK $BREADCRUMB_SEPARATOR
 
 $CENTER_TITLE $AUTO_RULE $SUB_LOGO $TREE_TOC $LIST_UL $WRAP_SCRIPT_OUTPUT
 
@@ -58,8 +56,6 @@ $IMAGE_API_RECURSE $API_ENABLED
 $MEDITATION_DIRECTORY $MEDITATION_FILETYPES
 
 $MAIN_STYLESHEET $LEGACY_STYLESHEET
-
-$SYSTEM_STATUS $STATUS_COMMAND
 
 $HOSTNAME $ORGANIZATION $SITE_NAME $HOME_PAGE_TITLE $CURRENT_TIME
 
@@ -137,7 +133,6 @@ $SITE_NAME      //= "";
 $HOME_PAGE_TITLE //= "Home";
 
 # Display behavior
-$DYNAMIC_LANDING   //= 0;
 $NAVIGATION_MENU   //= 1;
 $ROOT_NAVIGATION   //= 0;
 $NAV_POSITION      //= 1;   # 1=top, -1=bottom, 0=none
@@ -150,10 +145,6 @@ $LIST_UL           //= 1;
 $SUB_LOGO          //= 0;
 $WRAP_SCRIPT_OUTPUT //= 0;
 $CENTER_IMAGE_CAPTIONS //= 1;
-
-# Deprecated nav variables (still functional, will be removed in 3.0)
-$TOC_NAV      //= 1;
-$ROOT_TOC_NAV //= 0;
 
 # Table of contents
 $SHOW_TOC            //= 1;
@@ -205,8 +196,6 @@ $HTML_DOCTYPE //= 'HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://
 $CLOUDFLARE   //= 0;
 
 # System features
-$SYSTEM_STATUS  //= 0;
-$STATUS_COMMAND //= "";
 $API_ENABLED    //= 1;
 $DEBUG_TRACE    //= 0;
 
@@ -1262,25 +1251,6 @@ sub page_footer {
 	return($footer);
 }
 
-# Landing page dynamic content subroutines ---------------------------------- #
-
-sub status_report {
-    	debug_line("Entering subroutine: status_report()");
-	return if (!$SYSTEM_STATUS);
-	my $command_output;
-	my $report = auto_hr . "<H2>Live system status</H2>\n";
-	if ($STATUS_COMMAND) {
-		$command_output = preformat_text($STATUS_COMMAND);
-	} else {
-		$command_output = preformat_text(`uptime`);
-	}
-	return if (!$command_output);
-	$report .= "${command_output}\n";
-	$report = "<DIV ID=\"status\">\n${report}</DIV>\n";
-	$report = secure_data($report);
-	return($report); 
-}
-
 # Metadata subroutines ------------------------------------------------------ #
 
 # Metadata title
@@ -2274,12 +2244,6 @@ if ($has_body_file || $has_body_dir) {
 	if ($APPEND_TOC_TO_BODY) {
 		$_NSI_CONTENT .= page_toc();
 	}
-} elsif (cwd() eq $ENV{DOCUMENT_ROOT} && $DYNAMIC_LANDING) {
-# If no body file or fragments exist and we are in the root directory,
-# generate a dynamic system landing page.
-	$_NSI_CONTENT .= page_intro();
-	$_NSI_CONTENT .= page_toc();
-	$_NSI_CONTENT .= status_report();
 } else {
 # Generate a regular dynamic page
 	$_NSI_CONTENT .= page_intro();

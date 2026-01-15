@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- #
-my $version = '2.16.0.2';
+my $version = '2.16.0.4';
 # --------------------------------------------------------------------------- #
 
 $_SITE_CONFIG_NAME = "res/config.pl";
@@ -61,7 +61,7 @@ $MAIN_STYLESHEET $LEGACY_STYLESHEET
 
 $SYSTEM_STATUS $STATUS_COMMAND
 
-$HOSTNAME $ORGANIZATION $SITE_NAME $HOME_PAGE_TITLE
+$HOSTNAME $ORGANIZATION $SITE_NAME $HOME_PAGE_TITLE $CURRENT_TIME
 
 $LINE_ELEMENTS $LINE_ELEMENT_DIVIDER $LINE_FRAME_L $LINE_FRAME_R
 
@@ -131,6 +131,7 @@ $MASTER_CONFIG_INIT = 1;
 
 # Site identity
 $HOSTNAME       //= `hostname -s`;
+$CURRENT_TIME   //= scalar localtime();
 $ORGANIZATION   //= "";
 $SITE_NAME      //= "";
 $HOME_PAGE_TITLE //= "Home";
@@ -161,12 +162,12 @@ $TOC_TITLE           //= "";
 $TOC_SUBTITLE        //= "";
 $APPEND_TOC_TO_BODY  //= 1;
 
-# Content files
-$TITLE_FILE //= ".title";
-$INTRO_FILE //= ".intro";
+# Content files (new names, with legacy dotfile fallback)
+$TITLE_FILE //= "title";
+$INTRO_FILE //= "intro.html";
 $BODY_FILE  //= "body.html";
-$TOC_FILE   //= ".info";
-$GROUP_FILE //= ".group";
+$TOC_FILE   //= "info";
+$GROUP_FILE //= "group";
 
 # Resource paths (derived from $RESOURCE_DIRECTORY)
 $RESOURCE_DIRECTORY //= "res";
@@ -224,6 +225,25 @@ $MEDITATION_FILETYPES = "${MEDITATION_FILETYPES}\$";
 
 
 # Utility subroutines ------------------------------------------------------- #
+
+# Resolve content file path with legacy dotfile fallback
+# Returns path that exists, preferring new name over legacy
+sub resolve_content_file {
+	my ($dir, $filename) = @_;
+	$dir //= ".";
+	my $new_path = "${dir}/${filename}";
+	return $new_path if -f $new_path;
+	
+	# Legacy fallback: .title, .intro, .info, .group
+	my $legacy_name = $filename;
+	$legacy_name =~ s/^(title|info|group)$/.$1/;
+	$legacy_name =~ s/^intro\.html$/.intro/;
+	
+	my $legacy_path = "${dir}/${legacy_name}";
+	return $legacy_path if -f $legacy_path;
+	
+	return $new_path;  # Default to new path if neither exists
+}
 
 # Use to mark sensitive data blocks
 # (i.e. for hiding from bad actors using Cloudflare)
@@ -747,8 +767,8 @@ sub get_parent_title {
 		$parent_dir = "..";
 	}
 
-	# Try reading .title file from parent
-	my $parent_title_file = "${parent_dir}/${TITLE_FILE}";
+	# Try reading title file from parent
+	my $parent_title_file = resolve_content_file($parent_dir, $TITLE_FILE);
 	if (-f $parent_title_file) {
 		if (open(my $fh, '<', $parent_title_file)) {
 			my $title = <$fh>;
@@ -758,8 +778,8 @@ sub get_parent_title {
 		}
 	}
 
-	# Try reading .info file from parent (line 1)
-	my $parent_info_file = "${parent_dir}/${TOC_FILE}";
+	# Try reading info file from parent (line 1)
+	my $parent_info_file = resolve_content_file($parent_dir, $TOC_FILE);
 	if (-f $parent_info_file) {
 		if (open(my $fh, '<', $parent_info_file)) {
 			my $title = <$fh>;
@@ -782,8 +802,8 @@ sub get_title_for_path {
 	# Normalize path
 	$dir_path =~ s/\/$//;
 
-	# Check for .title file
-	my $title_file = "${dir_path}/${TITLE_FILE}";
+	# Check for title file
+	my $title_file = resolve_content_file($dir_path, $TITLE_FILE);
 	if (-f $title_file) {
 		if (open(my $fh, '<', $title_file)) {
 			my $title = <$fh>;
@@ -793,8 +813,8 @@ sub get_title_for_path {
 		}
 	}
 
-	# Check for .info file (first line)
-	my $info_file = "${dir_path}/${TOC_FILE}";
+	# Check for info file (first line)
+	my $info_file = resolve_content_file($dir_path, $TOC_FILE);
 	if (-f $info_file) {
 		if (open(my $fh, '<', $info_file)) {
 			my $title = <$fh>;
@@ -813,15 +833,17 @@ sub get_title_for_path {
 
 sub get_page_title {
   my $title = "";
+  my $resolved_title_file = resolve_content_file(".", $TITLE_FILE);
+  my $resolved_toc_file = resolve_content_file(".", $TOC_FILE);
   if ($BODY_FILE) {
 	  $body_title = get_body_file_title();	
   }
   if ($PAGE_TITLE) 
   { 
     $title = "${PAGE_TITLE}"; 
-  } elsif ( -f "${TITLE_FILE}" ) {
-    open(my $title_html, '<', $TITLE_FILE)
-      or die "Cannot open static content file $TITLE_FILE";
+  } elsif ( -f $resolved_title_file ) {
+    open(my $title_html, '<', $resolved_title_file)
+      or die "Cannot open static content file $resolved_title_file";
     { 
       local $/;
       $title = <$title_html>;
@@ -829,9 +851,9 @@ sub get_page_title {
     close(title_html);
   } elsif ($body_title) {
     $title = $body_title;
-  } elsif ( -f "${TOC_FILE}" ) {
-    # Fallback to first line of .info file if no explicit title
-    open(my $info_fh, '<', $TOC_FILE);
+  } elsif ( -f $resolved_toc_file ) {
+    # Fallback to first line of info file if no explicit title
+    open(my $info_fh, '<', $resolved_toc_file);
     if ($info_fh) {
       my $info_title = <$info_fh>;
       close($info_fh);
@@ -883,12 +905,13 @@ sub page_title {
 
 sub page_intro {
   my $intro = "";
+  my $resolved_intro_file = resolve_content_file(".", $INTRO_FILE);
   if ($PAGE_INTRO) 
   { 
     $intro .= "${PAGE_INTRO}"; 
-  } elsif ( -f $INTRO_FILE ) {
-    open(my $intro_html, '<', $INTRO_FILE)
-      or die "Cannot open static content file $INTRO_FILE";
+  } elsif ( -f $resolved_intro_file ) {
+    open(my $intro_html, '<', $resolved_intro_file)
+      or die "Cannot open static content file $resolved_intro_file";
     { 
       local $/;
       $intro = <$intro_html>;
@@ -916,7 +939,7 @@ sub tree_toc {
 		foreach $item (@contents) {
         $item = $target_directory . '/' . $item;
 			if (-d $item) {
-				my $item_data = "${item}/${TOC_FILE}";
+				my $item_data = resolve_content_file($item, $TOC_FILE);
 				if (-f $item_data) {
 					my @item_array;
 					my $item_title;
@@ -937,7 +960,7 @@ sub tree_toc {
 					}
 					# Read group file if it exists
 					# Format: Line 1=group_id, Line 2=display_title, Line 3+=description
-					my $item_group = "${item}/${GROUP_FILE}";
+					my $item_group = resolve_content_file($item, $GROUP_FILE);
 					if (-f $item_group) {
 						if (open(ITEM_GROUP,$item_group)) {
 							my $group_line = 0;

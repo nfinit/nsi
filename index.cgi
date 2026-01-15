@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- #
-my $version = '2.16.0';
+my $version = '2.16.0.2';
 # --------------------------------------------------------------------------- #
 
 $_SITE_CONFIG_NAME = "res/config.pl";
@@ -43,13 +43,17 @@ $BODY_FILE $TITLE_FILE $INTRO_FILE $TOC_FILE $GROUP_FILE
 
 $LOGO $FAVICON
 
+$RESOURCE_DIRECTORY $STYLE_DIRECTORY
 $IMAGE_DIRECTORY $API_IMAGE_DIRECTORY $PREVIEW_DIRECTORY
 $LEGACY_PREVIEW_DIRECTORY $LEGACY_PREVIEW_STANDARD_DIRECTORY
 $COLLAGE_THUMBNAIL_DIRECTORY $FULLSIZE_IMAGE_DIRECTORY
 
+$SITE_RESOURCE_DIRECTORY $SITE_SYSRES_DIRECTORY
+$SITE_IMAGE_DIRECTORY $SITE_STYLE_DIRECTORY $SITE_MEDITATION_DIRECTORY
+
 $PREVIEW_WIDTH $LEGACY_PREVIEW_WIDTH $COLLAGE_THUMBNAIL_WIDTH
 
-$IMAGE_API_RECURSE
+$IMAGE_API_RECURSE $API_ENABLED
 
 $MEDITATION_DIRECTORY $MEDITATION_FILETYPES
 
@@ -58,6 +62,8 @@ $MAIN_STYLESHEET $LEGACY_STYLESHEET
 $SYSTEM_STATUS $STATUS_COMMAND
 
 $HOSTNAME $ORGANIZATION $SITE_NAME $HOME_PAGE_TITLE
+
+$LINE_ELEMENTS $LINE_ELEMENT_DIVIDER $LINE_FRAME_L $LINE_FRAME_R
 
 $DEBUG_TRACE
 
@@ -120,18 +126,101 @@ if ($CONFIG_ERRORS) {
 }
 $MASTER_CONFIG_INIT = 1;
 
+# Configuration defaults ---------------------------------------------------- #
+# These apply if not set in config.pl. Override by setting in your config.
+
+# Site identity
+$HOSTNAME       //= `hostname -s`;
+$ORGANIZATION   //= "";
+$SITE_NAME      //= "";
+$HOME_PAGE_TITLE //= "Home";
+
+# Display behavior
+$DYNAMIC_LANDING   //= 0;
+$NAVIGATION_MENU   //= 1;
+$ROOT_NAVIGATION   //= 0;
+$NAV_POSITION      //= 1;   # 1=top, -1=bottom, 0=none
+$FOOTER_NAV        //= 1;
+$FOOTER_TOP_LINK   //= 1;
+$BREADCRUMB_SEPARATOR //= " &gt; ";
+$CENTER_TITLE      //= 0;
+$AUTO_RULE         //= 1;
+$LIST_UL           //= 1;
+$SUB_LOGO          //= 0;
+$WRAP_SCRIPT_OUTPUT //= 0;
+$CENTER_IMAGE_CAPTIONS //= 1;
+
+# Deprecated nav variables (still functional, will be removed in 3.0)
+$TOC_NAV      //= 1;
+$ROOT_TOC_NAV //= 0;
+
+# Table of contents
+$SHOW_TOC            //= 1;
+$TREE_TOC            //= 1;
+$TOC_TITLE           //= "";
+$TOC_SUBTITLE        //= "";
+$APPEND_TOC_TO_BODY  //= 1;
+
+# Content files
+$TITLE_FILE //= ".title";
+$INTRO_FILE //= ".intro";
+$BODY_FILE  //= "body.html";
+$TOC_FILE   //= ".info";
+$GROUP_FILE //= ".group";
+
+# Resource paths (derived from $RESOURCE_DIRECTORY)
+$RESOURCE_DIRECTORY //= "res";
+$STYLE_DIRECTORY    //= "${RESOURCE_DIRECTORY}/style";
+$IMAGE_DIRECTORY    //= "${RESOURCE_DIRECTORY}/img";
+$FULLSIZE_IMAGE_DIRECTORY  //= "${IMAGE_DIRECTORY}/full";
+$PREVIEW_DIRECTORY         //= "${IMAGE_DIRECTORY}/previews";
+$LEGACY_PREVIEW_DIRECTORY  //= "${PREVIEW_DIRECTORY}/legacy";
+$LEGACY_PREVIEW_STANDARD_DIRECTORY //= "${LEGACY_PREVIEW_DIRECTORY}/standard";
+$COLLAGE_THUMBNAIL_DIRECTORY       //= "${LEGACY_PREVIEW_DIRECTORY}/collage";
+$MEDITATION_DIRECTORY //= "${IMAGE_DIRECTORY}/meditations";
+
+# Site-relative paths (for URLs)
+$SITE_RESOURCE_DIRECTORY   //= "/res";
+$SITE_SYSRES_DIRECTORY     //= "${SITE_RESOURCE_DIRECTORY}/sys";
+$SITE_IMAGE_DIRECTORY      //= "${SITE_RESOURCE_DIRECTORY}/img";
+$SITE_STYLE_DIRECTORY      //= "${SITE_RESOURCE_DIRECTORY}/style";
+$SITE_MEDITATION_DIRECTORY //= "${SITE_IMAGE_DIRECTORY}/meditations";
+
+# Resources
+$FAVICON           //= "${SITE_SYSRES_DIRECTORY}/favicon.ico";
+$LOGO              //= "${SITE_SYSRES_DIRECTORY}/logo.gif";
+$MAIN_STYLESHEET   //= "${SITE_STYLE_DIRECTORY}/style.css";
+$LEGACY_STYLESHEET //= "${SITE_STYLE_DIRECTORY}/legacy.css";
+
+# Image processing
+$PREVIEW_WIDTH           //= 1024;
+$LEGACY_PREVIEW_WIDTH    //= 600;
+$COLLAGE_THUMBNAIL_WIDTH //= 300;
+$MEDITATION_FILETYPES    //= ".gif|.jpg|.png";
+$IMAGE_API_RECURSE       //= 1;
+
+# Metadata
+$HTML_DOCTYPE //= 'HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd"';
+$CLOUDFLARE   //= 0;
+
+# System features
+$SYSTEM_STATUS  //= 0;
+$STATUS_COMMAND //= "";
+$API_ENABLED    //= 1;
+$DEBUG_TRACE    //= 0;
+
+# Line elements (display formatting)
+$LINE_ELEMENTS        //= 1;
+$LINE_ELEMENT_DIVIDER //= " | ";
+$LINE_FRAME_L         //= "[ ";
+$LINE_FRAME_R         //= " ]";
+
 # Preprocessing block ------------------------------------------------------- #
 
 chomp $HOSTNAME;
 $MEDITATION_FILETYPES =~ s/\./\\\./g;
 $MEDITATION_FILETYPES =~ s/\|/\$\|/g;
 $MEDITATION_FILETYPES = "${MEDITATION_FILETYPES}\$";
-
-# Set default home page title if not configured
-$HOME_PAGE_TITLE = "Home" unless $HOME_PAGE_TITLE;
-
-# Set default breadcrumb separator if not configured
-$BREADCRUMB_SEPARATOR = " &gt; " unless $BREADCRUMB_SEPARATOR;
 
 
 # Utility subroutines ------------------------------------------------------- #

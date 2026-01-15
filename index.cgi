@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- #
-my $version = '2.17.0.0';
+my $version = '2.17.0.2';
 # --------------------------------------------------------------------------- #
 
 $_SITE_CONFIG_NAME = "res/config.pl";
@@ -29,7 +29,7 @@ $SITE_VARS
 
 $HTML_DOCTYPE $CLOUDFLARE
 
-$NAVIGATION_MENU $ROOT_NAVIGATION $NAV_POSITION $FOOTER_NAV $FOOTER_TOP_LINK $BREADCRUMB_SEPARATOR
+$NAV_POSITION $FOOTER_NAV $BREADCRUMB_SEPARATOR
 
 $CENTER_TITLE $AUTO_RULE $SUB_LOGO $TREE_TOC $LIST_UL $WRAP_SCRIPT_OUTPUT
 
@@ -133,11 +133,8 @@ $SITE_NAME      //= "";
 $HOME_PAGE_TITLE //= "Home";
 
 # Display behavior
-$NAVIGATION_MENU   //= 1;
-$ROOT_NAVIGATION   //= 0;
 $NAV_POSITION      //= 1;   # 1=top, -1=bottom, 0=none
 $FOOTER_NAV        //= 1;
-$FOOTER_TOP_LINK   //= 1;
 $BREADCRUMB_SEPARATOR //= " &gt; ";
 $CENTER_TITLE      //= 0;
 $AUTO_RULE         //= 1;
@@ -1090,7 +1087,7 @@ sub cwd_nested_in {
 }
 
 sub navigation_menu {
-	return if (!$NAVIGATION_MENU);
+	return if (!$NAV_POSITION);
 
 	# Normalize paths for comparison (handle trailing slash differences)
 	my $current_dir = get_logical_cwd();
@@ -1098,8 +1095,8 @@ sub navigation_menu {
 	$current_dir =~ s/\/$//;
 	$doc_root =~ s/\/$//;
 
-	# Don't show navigation at root unless explicitly enabled
-	return if (!$ROOT_NAVIGATION && $current_dir eq $doc_root);
+	# Skip navigation at root - just "Home" is pointless
+	return if ($current_dir eq $doc_root);
 
 	# Build breadcrumb trail from root to current location
 	my @breadcrumbs;
@@ -1208,26 +1205,21 @@ sub page_footer {
 		my $parent_is_root = (abs_path("..") eq abs_path($ENV{DOCUMENT_ROOT}));
 
 		# Add "Back to top" link as the first element
-		if ($FOOTER_TOP_LINK) {
-			$nav_controls .= "<A HREF=\"#content\">Back to top</A>\n";
-			# Add divider after if there will be more controls
-			if ((!$at_root && !$parent_is_root) || ($NAVIGATION_MENU && $NAV_POSITION >= 0 && !$at_root)) {
-				$nav_controls .= $LINE_ELEMENT_DIVIDER if ($LINE_ELEMENTS);
-			}
+		$nav_controls .= "<A HREF=\"#content\">Back to top</A>\n";
+		# Add divider after if there will be more controls
+		if (!$at_root) {
+			$nav_controls .= $LINE_ELEMENT_DIVIDER if ($LINE_ELEMENTS);
 		}
 
 		# Only show parent link if not at root and parent is not the root
 		if (!$at_root && !$parent_is_root) {
 			my $parent_title = get_parent_title();
 			$nav_controls .= "<A HREF=\"..\">${parent_title}</A>\n";
-			# Add divider before Home link if needed
-			if ($NAVIGATION_MENU && $NAV_POSITION >= 0) {
-				$nav_controls .= $LINE_ELEMENT_DIVIDER if ($LINE_ELEMENTS);
-			}
+			$nav_controls .= $LINE_ELEMENT_DIVIDER if ($LINE_ELEMENTS);
 		}
 
-		# Show Home link if navigation menu is enabled and not already at root
-		if ($NAVIGATION_MENU && $NAV_POSITION >= 0 && !$at_root) {
+		# Show Home link if not at root
+		if (!$at_root) {
 			$nav_controls .= "<A HREF=\"/\">${HOME_PAGE_TITLE}</A>\n";
 		}
 

@@ -1,6 +1,19 @@
 #!/usr/bin/env perl
-# Minimal NSI configuration - relies on built-in defaults
+# NSI Site Configuration
+# Only set what you need - everything else has sensible defaults.
+
+# Required
 $SITE_NAME    = "NSI Development Repository";
-$ORGANIZATION = "NFINIT labs";
-$CLOUDFLARE   = 1;
+
+# Optional - uncomment to customize
+# $ORGANIZATION     = "NFINIT labs";
+# $HOME_PAGE_TITLE  = "Home";           # Title for root page and breadcrumbs
+# $NAV_POSITION     = 1;                # Breadcrumbs: 1=top, -1=bottom, 0=off
+# $FOOTER_NAV       = 1;                # Footer navigation links
+# $SHOW_TOC         = 1;                # Generate table of contents
+# $CLOUDFLARE       = 0;                # Wrap sensitive data in SSE comments
+# $API_ENABLED      = 1;                # Random image API
+# $DEBUG_TRACE      = 0;                # Show timing/debug output
+# $MEDITATE         = 0;                # Rotating banner from res/img/meditations/
+
 1;

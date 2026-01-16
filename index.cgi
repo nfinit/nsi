@@ -1,68 +1,43 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- #
-my $version = '2.17.0.5';
+my $version = '2.17.0.7';
 # --------------------------------------------------------------------------- #
 
 $_SITE_CONFIG_NAME = "res/config.pl";
 $_LOCAL_CONFIG = "./.config.pl";
 
-# DO NOT EDIT ANYTHING BELOW THIS LINE
 # =========================================================================== #
 use utf8;
 use Cwd qw(cwd abs_path);
 use File::Basename;
 use Time::HiRes qw(time);
 # --------------------------------------------------------------------------- #
-# All variables can be sourced from either configuration file, however:
-# Variables after $SITE_VARS should be sourced from your SITE configuration
-# Variables after $LOCAL_VARS should be sourced from your LOCAL configuration 
+# Variables that can be set in config.pl or local .config.pl
+# All have sensible defaults - see "Configuration defaults" section below
 # --------------------------------------------------------------------------- #
 use vars qw(
-
-$LOCAL_VARS
-
 $MEDITATE
-
 $PAGE_TITLE $PAGE_INTRO
-
-$SITE_VARS
-
 $HTML_DOCTYPE $CLOUDFLARE
-
 $NAV_POSITION $FOOTER_NAV $BREADCRUMB_SEPARATOR
-
 $CENTER_TITLE $AUTO_RULE $SUB_LOGO $TREE_TOC $WRAP_SCRIPT_OUTPUT
-
 $CENTER_IMAGE_CAPTIONS
-
 $SHOW_TOC $TOC_TITLE $TOC_SUBTITLE $APPEND_TOC_TO_BODY
-
 $BODY_FILE $TITLE_FILE $INTRO_FILE $TOC_FILE $GROUP_FILE
-
 $LOGO $FAVICON
-
 $RESOURCE_DIRECTORY $STYLE_DIRECTORY
 $IMAGE_DIRECTORY $API_IMAGE_DIRECTORY $PREVIEW_DIRECTORY
 $LEGACY_PREVIEW_DIRECTORY $LEGACY_PREVIEW_STANDARD_DIRECTORY
 $COLLAGE_THUMBNAIL_DIRECTORY $FULLSIZE_IMAGE_DIRECTORY
-
 $SITE_RESOURCE_DIRECTORY $SITE_SYSRES_DIRECTORY
 $SITE_IMAGE_DIRECTORY $SITE_STYLE_DIRECTORY $SITE_MEDITATION_DIRECTORY
-
 $PREVIEW_WIDTH $LEGACY_PREVIEW_WIDTH $COLLAGE_THUMBNAIL_WIDTH
-
 $IMAGE_API_RECURSE $API_ENABLED
-
 $MEDITATION_DIRECTORY
-
 $MAIN_STYLESHEET $LEGACY_STYLESHEET
-
 $HOSTNAME $ORGANIZATION $SITE_NAME $HOME_PAGE_TITLE $CURRENT_TIME
-
 $LINE_ELEMENTS $LINE_ELEMENT_DIVIDER $LINE_FRAME_L $LINE_FRAME_R
-
 $DEBUG_TRACE
-
 );
 # Set run mode -------------------------------------------------------------- #
 my $_WWW_EXEC;
@@ -476,8 +451,17 @@ sub process_body_fragments {
 	foreach my $fragment (@fragments) {
 		my $fragment_path = "$body_dir/$fragment";
 
-		# Check if fragment is executable (script)
+		# Check if fragment is executable script (must have shebang)
+		my $is_script = 0;
 		if (-x $fragment_path) {
+			if (open(my $check_fh, '<', $fragment_path)) {
+				my $first_line = <$check_fh>;
+				close($check_fh);
+				$is_script = 1 if ($first_line && $first_line =~ /^#!/);
+			}
+		}
+
+		if ($is_script) {
 			# Check for per-script WRAP override on line 2
 			my $wrap_output = $WRAP_SCRIPT_OUTPUT;  # Default to global setting
 			if (open(my $script_fh, '<', $fragment_path)) {

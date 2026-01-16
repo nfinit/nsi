@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- #
-my $version = '2.17.0.7';
+my $version = '2.17.0.8';
 # --------------------------------------------------------------------------- #
 
 $_SITE_CONFIG_NAME = "res/config.pl";
@@ -1080,9 +1080,9 @@ sub navigation_menu {
 		$menu .= $item;
 	}
 
-	# Wrap in navigation div with horizontal rules
+	# Wrap in navigation div with horizontal rule before
 	$menu = "<DIV ID=\"navigation\" CLASS=\"no_print\">\n${menu}\n</DIV>\n";
-	$menu = auto_hr() . $menu . auto_hr();
+	$menu = auto_hr() . $menu;
 	return ($menu);
 }
 

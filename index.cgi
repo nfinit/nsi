@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- #
-my $version = '2.17.0.4';
+my $version = '2.17.0.5';
 # --------------------------------------------------------------------------- #
 
 $_SITE_CONFIG_NAME = "res/config.pl";
@@ -53,7 +53,7 @@ $PREVIEW_WIDTH $LEGACY_PREVIEW_WIDTH $COLLAGE_THUMBNAIL_WIDTH
 
 $IMAGE_API_RECURSE $API_ENABLED
 
-$MEDITATION_DIRECTORY $MEDITATION_FILETYPES
+$MEDITATION_DIRECTORY
 
 $MAIN_STYLESHEET $LEGACY_STYLESHEET
 
@@ -184,7 +184,6 @@ $LEGACY_STYLESHEET //= "${SITE_STYLE_DIRECTORY}/legacy.css";
 $PREVIEW_WIDTH           //= 1024;
 $LEGACY_PREVIEW_WIDTH    //= 600;
 $COLLAGE_THUMBNAIL_WIDTH //= 300;
-$MEDITATION_FILETYPES    //= ".gif|.jpg|.png";
 $IMAGE_API_RECURSE       //= 1;
 
 # Metadata
@@ -204,9 +203,6 @@ $LINE_FRAME_R         //= " ]";
 # Preprocessing block ------------------------------------------------------- #
 
 chomp $HOSTNAME;
-$MEDITATION_FILETYPES =~ s/\./\\\./g;
-$MEDITATION_FILETYPES =~ s/\|/\$\|/g;
-$MEDITATION_FILETYPES = "${MEDITATION_FILETYPES}\$";
 
 
 # Utility subroutines ------------------------------------------------------- #
@@ -453,7 +449,7 @@ sub meditate {
   my $meditation;
   return if (! -d $MEDITATION_DIRECTORY);
   opendir(MEDITATIONS,$MEDITATION_DIRECTORY) or die $!;
-  my @meditations = grep /$MEDITATION_FILETYPES/, readdir(MEDITATIONS);
+  my @meditations = grep { -f "$MEDITATION_DIRECTORY/$_" && $_ !~ /^\./ } readdir(MEDITATIONS);
   closedir(MEDITATIONS);
   my $meditation_count = scalar @meditations;
   return if (!$meditation_count);

@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- #
-my $version = '2.17.0.2';
+my $version = '2.17.0.3';
 # --------------------------------------------------------------------------- #
 
 $_SITE_CONFIG_NAME = "res/config.pl";
@@ -31,7 +31,7 @@ $HTML_DOCTYPE $CLOUDFLARE
 
 $NAV_POSITION $FOOTER_NAV $BREADCRUMB_SEPARATOR
 
-$CENTER_TITLE $AUTO_RULE $SUB_LOGO $TREE_TOC $LIST_UL $WRAP_SCRIPT_OUTPUT
+$CENTER_TITLE $AUTO_RULE $SUB_LOGO $TREE_TOC $WRAP_SCRIPT_OUTPUT
 
 $CENTER_IMAGE_CAPTIONS
 
@@ -138,7 +138,6 @@ $FOOTER_NAV        //= 1;
 $BREADCRUMB_SEPARATOR //= " &gt; ";
 $CENTER_TITLE      //= 0;
 $AUTO_RULE         //= 1;
-$LIST_UL           //= 1;
 $SUB_LOGO          //= 0;
 $WRAP_SCRIPT_OUTPUT //= 0;
 $CENTER_IMAGE_CAPTIONS //= 1;
@@ -1022,26 +1021,16 @@ sub page_toc {
     		my $current_group = $item_group_id || '';
     		if ($current_group ne $prev_group_id && $item_group_title) {
     			# Close previous nested group if in one
-    			if ($LIST_UL && $in_group) {
+    			if ($in_group) {
     				$contents .= "</UL>\n";
     				$in_group = 0;
     			}
     			# Start new group with header and nested list
-    			# NOTE: This places H2 and UL directly inside parent UL without
-    			# wrapping in LI, which is technically non-compliant with strict
-    			# HTML 4.01 but works reliably in all browsers including legacy
-    			# clients and avoids bullets on group titles.
-    			if ($LIST_UL) {
-    				$contents .= "<H2>${item_group_title}</H2>\n";
-    				$contents .= "<P>${item_group_description}</P>\n"
-    					if ($item_group_description);
-    				$contents .= "<UL>\n";
-    				$in_group = 1;
-    			} else {
-    				$contents .= "<H2>${item_group_title}</H2>\n";
-    				$contents .= "<P>${item_group_description}</P>\n"
-    					if ($item_group_description);
-    			}
+    			$contents .= "<H2>${item_group_title}</H2>\n";
+    			$contents .= "<P>${item_group_description}</P>\n"
+    				if ($item_group_description);
+    			$contents .= "<UL>\n";
+    			$in_group = 1;
     		} elsif ($current_group ne $prev_group_id && $in_group) {
     			# Exiting a group (back to ungrouped items)
     			$contents .= "</UL>\n";
@@ -1053,16 +1042,16 @@ sub page_toc {
     		$list_item  = "<H3>${list_item}</H3>";
     		$list_item .= "\n<P>${item_description}</P>"
                 	if ($item_description);
-    		$list_item  = "<LI>\n${list_item}\n</LI>" if ($LIST_UL);
+    		$list_item  = "<LI>\n${list_item}\n</LI>";
     		$list_item .= "\n";
     		$contents .= $list_item;
   	}
   	# Close final group if needed
-  	if ($LIST_UL && $in_group) {
+  	if ($in_group) {
   		$contents .= "</UL>\n";
   	}
 	return if (!$contents);
-	$contents = "<UL>\n${contents}</UL>\n" if ($LIST_UL);
+	$contents = "<UL>\n${contents}</UL>\n";
   	$contents = "<P>\n${TOC_SUBTITLE}</P>\n${contents}"
                  if ($TOC_SUBTITLE);
   	$contents = "<H2>${TOC_TITLE}</H2>\n${contents}"

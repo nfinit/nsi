@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- #
-my $version = '2.17.0.3';
+my $version = '2.17.0.4';
 # --------------------------------------------------------------------------- #
 
 $_SITE_CONFIG_NAME = "res/config.pl";
@@ -463,24 +463,6 @@ sub meditate {
   return($meditation);
 }
 
-sub get_body_file_title {
-	return if (! -f $BODY_FILE);
-	open (my $body_data,"<",$BODY_FILE) or die $!;
-	my @body_lines = <$body_data>;
-	my @title_lines = grep(/<h1 id="title">/, @body_lines);
-	my $title = @title_lines[0];
- 	$title =~ s|<.+?>||g;
-	return($title);	
-}
-
-sub strip_body_file_title {
-	return if (! -f $BODY_FILE);
-	open (my $body_data,"<",$BODY_FILE) or die $!;
-	my @body_full = <$body_data>;
-	my @body_lines = grep(!/<h1 id="title">/, @body_full);
-	return(join("\n",@body_lines));
-}
-
 sub process_body_fragments {
 	my $body_dir = "body";
 	return "" if (! -d $body_dir);
@@ -727,62 +709,12 @@ sub get_logical_cwd {
 	return cwd();
 }
 
-sub get_parent_title {
-	# For web requests, use SCRIPT_NAME to get logical parent path
-	# (preserves symlink semantics by using URL path instead of filesystem)
-	my $parent_dir;
-
-	if ($ENV{SCRIPT_NAME}) {
-		# Extract directory from script path (e.g., /galleries/travel/index.cgi -> /galleries/travel)
-		my $script_dir = $ENV{SCRIPT_NAME};
-		$script_dir =~ s/\/[^\/]+$//;  # Remove /index.cgi
-
-		# Get parent directory from URL path
-		if ($script_dir =~ m|^(.*)/[^/]+$|) {
-			my $parent_url_path = $1;
-			$parent_url_path = "/" if (!$parent_url_path);  # Handle root case
-
-			# Construct absolute filesystem path to parent
-			$parent_dir = $ENV{DOCUMENT_ROOT} . $parent_url_path;
-		}
-	}
-
-	# Fallback to relative path for non-web contexts
-	if (!$parent_dir) {
-		$parent_dir = "..";
-	}
-
-	# Try reading title file from parent
-	my $parent_title_file = resolve_content_file($parent_dir, $TITLE_FILE);
-	if (-f $parent_title_file) {
-		if (open(my $fh, '<', $parent_title_file)) {
-			my $title = <$fh>;
-			close($fh);
-			chomp($title) if ($title);
-			return $title if ($title);
-		}
-	}
-
-	# Try reading info file from parent (line 1)
-	my $parent_info_file = resolve_content_file($parent_dir, $TOC_FILE);
-	if (-f $parent_info_file) {
-		if (open(my $fh, '<', $parent_info_file)) {
-			my $title = <$fh>;
-			close($fh);
-			chomp($title) if ($title);
-			return $title if ($title);
-		}
-	}
-
-	# Fallback to ".."
-	return "..";
-}
-
-# Get title for a specific directory path (for breadcrumb navigation)
-# Checks .title, then .info (first line), then returns directory name
+# Get title for a specific directory path
+# Checks title file, then info file (first line), then returns fallback
 sub get_title_for_path {
-	my $dir_path = shift @_;
-	return "" unless $dir_path;
+	my ($dir_path, $fallback) = @_;
+	$fallback //= "";
+	return $fallback unless $dir_path;
 
 	# Normalize path
 	$dir_path =~ s/\/$//;
@@ -809,22 +741,39 @@ sub get_title_for_path {
 		}
 	}
 
-	# Fallback to directory name
-	my $dir_name = basename($dir_path);
-	return $dir_name if $dir_name;
+	# Fallback to directory name if no explicit fallback given
+	if (!$fallback) {
+		my $dir_name = basename($dir_path);
+		return $dir_name if $dir_name;
+	}
 
-	return "";
+	return $fallback;
+}
+
+sub get_parent_title {
+	# Resolve parent directory path
+	my $parent_dir;
+
+	if ($ENV{SCRIPT_NAME}) {
+		my $script_dir = $ENV{SCRIPT_NAME};
+		$script_dir =~ s/\/[^\/]+$//;  # Remove /index.cgi
+		if ($script_dir =~ m|^(.*)/[^/]+$|) {
+			my $parent_url_path = $1 || "/";
+			$parent_dir = $ENV{DOCUMENT_ROOT} . $parent_url_path;
+		}
+	}
+	$parent_dir //= "..";
+
+	return get_title_for_path($parent_dir, "..");
 }
 
 sub get_page_title {
   my $title = "";
   my $resolved_title_file = resolve_content_file(".", $TITLE_FILE);
   my $resolved_toc_file = resolve_content_file(".", $TOC_FILE);
-  if ($BODY_FILE) {
-	  $body_title = get_body_file_title();	
-  }
-  if ($PAGE_TITLE) 
-  { 
+
+  # Title precedence: config override > title file > info file > site defaults
+  if ($PAGE_TITLE) { 
     $title = "${PAGE_TITLE}"; 
   } elsif ( -f $resolved_title_file ) {
     open(my $title_html, '<', $resolved_title_file)
@@ -834,8 +783,6 @@ sub get_page_title {
       $title = <$title_html>;
     }
     close(title_html);
-  } elsif ($body_title) {
-    $title = $body_title;
   } elsif ( -f $resolved_toc_file ) {
     # Fallback to first line of info file if no explicit title
     open(my $info_fh, '<', $resolved_toc_file);
@@ -849,13 +796,11 @@ sub get_page_title {
 
   # Final fallback to site defaults
   if (!$title) {
-    # Normalize paths for comparison (handle trailing slash differences)
     my $current_dir = get_logical_cwd();
     my $doc_root = $ENV{DOCUMENT_ROOT};
     $current_dir =~ s/\/$//;
     $doc_root =~ s/\/$//;
 
-    # Use HOME_PAGE_TITLE if we're at the root
     if ($current_dir eq $doc_root) {
       $title = $HOME_PAGE_TITLE;
     } elsif ($SITE_NAME) {

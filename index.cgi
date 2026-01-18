@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- #
-my $version = '2.18.0.11';
+my $version = '2.19.0.1';
 # --------------------------------------------------------------------------- #
 
 $_SITE_CONFIG_NAME = "res/config.pl";
@@ -2161,7 +2161,11 @@ if ($has_body_file || $has_body_dir) {
 	# Process body/ fragments if directory exists (appends after body.html)
 	if ($has_body_dir) {
 		my $fragments = process_body_fragments();
-		$_NSI_CONTENT .= $fragments if ($fragments);
+		if ($fragments) {
+			# Add HR if fragments-only (no body.html preceded it)
+			$_NSI_CONTENT .= auto_hr() if (!$has_body_file);
+			$_NSI_CONTENT .= $fragments;
+		}
 	}
 	# Append TOC after body content if enabled
 	if ($APPEND_TOC_TO_BODY) {

@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index for simple websites --------------------------- #
-my $version = '2.17.0.8';
+my $version = '2.18.0.11';
 # --------------------------------------------------------------------------- #
 
 $_SITE_CONFIG_NAME = "res/config.pl";
@@ -23,6 +23,7 @@ $NAV_POSITION $FOOTER_NAV $BREADCRUMB_SEPARATOR
 $CENTER_TITLE $AUTO_RULE $SUB_LOGO $TREE_TOC $WRAP_SCRIPT_OUTPUT
 $CENTER_IMAGE_CAPTIONS
 $SHOW_TOC $TOC_TITLE $TOC_SUBTITLE $APPEND_TOC_TO_BODY
+$EXPAND_GROUPS $EXPAND_GROUPS_DEPTH
 $BODY_FILE $TITLE_FILE $INTRO_FILE $TOC_FILE $GROUP_FILE
 $LOGO $FAVICON
 $RESOURCE_DIRECTORY $STYLE_DIRECTORY
@@ -123,6 +124,8 @@ $TREE_TOC            //= 1;
 $TOC_TITLE           //= "";
 $TOC_SUBTITLE        //= "";
 $APPEND_TOC_TO_BODY  //= 1;
+$EXPAND_GROUPS       //= 1;
+$EXPAND_GROUPS_DEPTH //= 1;
 
 # Content files (new names, with legacy dotfile fallback)
 $TITLE_FILE //= "title";
@@ -498,6 +501,26 @@ sub process_body_fragments {
 	return $fragment_content;
 }
 
+# Transform <nsi-banner> tags into styled banner blocks
+# Usage: <nsi-banner class="warning" title="Notice">Description text</nsi-banner>
+# Classes: info, warning, note (or any custom class for CSS)
+sub transform_nsi_banner_tags {
+	my $content = shift @_;
+	return $content if (!$content);
+	$content =~ s{<nsi-banner\s+([^>]*)>(.*?)</nsi-banner>}{
+		my $attrs = $1;
+		my $description = $2;
+		my $class = ($attrs =~ /class="([^"]*)"/) ? $1 : 'info';
+		my $title = ($attrs =~ /title="([^"]*)"/) ? $1 : '';
+		my $out = "<DIV CLASS=\"nsi-banner nsi-banner-${class}\">\n";
+		$out .= "  <B>${title}</B>\n" if ($title);
+		$out .= "  <P>${description}</P>\n" if ($description);
+		$out .= "</DIV>\n";
+		$out;
+	}geis;
+	return $content;
+}
+
 sub transform_nsi_image_tags {
 	my $content = shift @_;
 	return $content if (!$content);
@@ -839,26 +862,26 @@ sub page_intro {
 # --------
 # Generate a table of contents array for a specified directory tree using
 # files as defined by the $TOC_FILE variable for titles and descriptions
+# Array structure: [0]=title, [1]=path, [2]=description, [3]=is_group, [4]=group_title_override, [5]=fs_path
 sub tree_toc {
 	my @TOC;
-	my $target_directory = shift; # Get first argument
+	my $target_directory = shift;
 	$target_directory = '.' if !$target_directory;
 	if (opendir(ROOT,"${target_directory}")) {
 		my @contents = grep !/^.\.*$/, readdir(ROOT);
 		closedir(ROOT);
 		foreach $item (@contents) {
-        $item = $target_directory . '/' . $item;
+			$item = $target_directory . '/' . $item;
 			if (-d $item) {
 				my $item_data = resolve_content_file($item, $TOC_FILE);
 				if (-f $item_data) {
 					my @item_array;
 					my $item_title;
 					my $item_path = "${item}/";
-          $item_path =~ s/^$ENV{DOCUMENT_ROOT}//;
+					$item_path =~ s/^$ENV{DOCUMENT_ROOT}//;
 					my $item_description;
-					my $item_group_id;
-					my $item_group_display_title;
-					my $item_group_description;
+					my $is_group = 0;
+					my $group_title_override;
 					if (open(ITEM_DATA,$item_data)) {
 						my $data_line = 0;
 						while (<ITEM_DATA>) {
@@ -868,41 +891,29 @@ sub tree_toc {
 						}
 						close(ITEM_DATA);
 					}
-					# Read group file if it exists
-					# Format: Line 1=group_id, Line 2=display_title, Line 3+=description
+					# Check for .group flag file
 					my $item_group = resolve_content_file($item, $GROUP_FILE);
 					if (-f $item_group) {
-						if (open(ITEM_GROUP,$item_group)) {
-							my $group_line = 0;
-							while (<ITEM_GROUP>) {
-								chomp;
-								$item_group_id = "$_" if ($group_line == 0);
-								$item_group_display_title = "$_" if ($group_line == 1);
-								$item_group_description .= "$_" if ($group_line > 1);
-								$group_line++;
-							}
+						$is_group = 1;
+						if (open(ITEM_GROUP, $item_group)) {
+							my $override = <ITEM_GROUP>;
+							chomp $override if $override;
+							$group_title_override = $override if $override;
 							close(ITEM_GROUP);
 						}
 					}
-					# Always push all 6 elements to maintain consistent array indices
-					# [0]=title, [1]=path, [2]=description, [3]=group_id, [4]=group_display_title, [5]=group_description
 					push @item_array, $item_title;
 					push @item_array, $item_path;
 					push @item_array, $item_description;
-					push @item_array, $item_group_id;
-					push @item_array, $item_group_display_title;
-					push @item_array, $item_group_description;
-            				push (@TOC, \@item_array) if ($item_title && $item_path);
+					push @item_array, $is_group;
+					push @item_array, $group_title_override;
+					push @item_array, $item;  # filesystem path for expansion
+					push (@TOC, \@item_array) if ($item_title && $item_path);
 				}
 			}
 		}
 	}
-	# Sort by group (or title if no group), then by title within group
-	@TOC = sort {
-		my $group_a = $a->[3] || $a->[0];
-		my $group_b = $b->[3] || $b->[0];
-		$group_a cmp $group_b || $a->[0] cmp $b->[0]
-	} @TOC;
+	@TOC = sort { $a->[0] cmp $b->[0] } @TOC;
 	return (@TOC);
 }
 
@@ -929,62 +940,68 @@ sub page_toc {
 	return if (!$SHOW_TOC);
 	my @TOC = toc();
 	return if (!@TOC);
-	my $contents;
-	my $prev_group_id = '';
-	my $in_group = 0;
-	foreach my $toc_link (@TOC) {
-		my $list_item;
-    		my $item_name             = @$toc_link[0];
-    		my $item_path             = @$toc_link[1];
-    		my $item_description      = @$toc_link[2];
-    		my $item_group_id         = @$toc_link[3];
-    		my $item_group_title      = @$toc_link[4];
-    		my $item_group_description = @$toc_link[5];
-    		next if (!$item_name);
-    		next if (!$item_path);
-    		# Check if we've entered a new group with a display title
-    		my $current_group = $item_group_id || '';
-    		if ($current_group ne $prev_group_id && $item_group_title) {
-    			# Close previous nested group if in one
-    			if ($in_group) {
-    				$contents .= "</UL>\n";
-    				$in_group = 0;
-    			}
-    			# Start new group with header and nested list
-    			$contents .= "<H2>${item_group_title}</H2>\n";
-    			$contents .= "<P>${item_group_description}</P>\n"
-    				if ($item_group_description);
-    			$contents .= "<UL>\n";
-    			$in_group = 1;
-    		} elsif ($current_group ne $prev_group_id && $in_group) {
-    			# Exiting a group (back to ungrouped items)
-    			$contents .= "</UL>\n";
-    			$in_group = 0;
-    		}
-    		$prev_group_id = $current_group;
-    		$list_item .= "${item_name}";
-    		$list_item  = "<A HREF=\"${item_path}\">${list_item}</A>";
-    		$list_item  = "<H3>${list_item}</H3>";
-    		$list_item .= "\n<P>${item_description}</P>"
-                	if ($item_description);
-    		$list_item  = "<LI>\n${list_item}\n</LI>";
-    		$list_item .= "\n";
-    		$contents .= $list_item;
-  	}
-  	# Close final group if needed
-  	if ($in_group) {
-  		$contents .= "</UL>\n";
-  	}
+	my $contents = render_toc_list(\@TOC, 1);
 	return if (!$contents);
 	$contents = "<UL>\n${contents}</UL>\n";
-  	$contents = "<P>\n${TOC_SUBTITLE}</P>\n${contents}"
-                 if ($TOC_SUBTITLE);
-  	$contents = "<H2>${TOC_TITLE}</H2>\n${contents}"
-                 if ($TOC_TITLE);
-  	$contents = "<DIV ID=\"contents\">\n${contents}</DIV>\n";
-
-  	$contents = auto_hr() . $contents;
+	$contents = "<P>\n${TOC_SUBTITLE}</P>\n${contents}" if ($TOC_SUBTITLE);
+	$contents = "<H2>${TOC_TITLE}</H2>\n${contents}" if ($TOC_TITLE);
+	$contents = "<DIV ID=\"contents\">\n${contents}</DIV>\n";
+	$contents = auto_hr() . $contents;
 	return ($contents);
+}
+
+# Render TOC list items, with optional group expansion
+# $depth tracks current recursion level for EXPAND_GROUPS_DEPTH
+sub render_toc_list {
+	my ($toc_ref, $depth) = @_;
+	my $contents = '';
+	foreach my $toc_link (@$toc_ref) {
+		my $item_name        = $toc_link->[0];
+		my $item_path        = $toc_link->[1];
+		my $item_description = $toc_link->[2];
+		my $is_group         = $toc_link->[3];
+		my $group_title      = $toc_link->[4];
+		my $fs_path          = $toc_link->[5];
+		next if (!$item_name || !$item_path);
+		
+		my $display_title = $group_title || $item_name;
+		my $list_item = "<A HREF=\"${item_path}\">${display_title}</A>";
+		$list_item = "<H3>${list_item}</H3>";
+		$list_item .= "\n<P>${item_description}</P>" if ($item_description);
+		
+		# Expand group if enabled and within depth limit
+		if ($is_group && $EXPAND_GROUPS && $depth <= $EXPAND_GROUPS_DEPTH) {
+			# Get group's intro content
+			my $group_intro = get_file_content($fs_path, $INTRO_FILE);
+			$list_item .= "\n${group_intro}" if ($group_intro);
+			# Only show body if no description in info file
+			if (!$item_description) {
+				my $group_body = get_file_content($fs_path, $BODY_FILE);
+				$list_item .= "\n${group_body}" if ($group_body);
+			}
+			# Get group's nested TOC
+			my @sub_toc = tree_toc($fs_path);
+			if (@sub_toc) {
+				my $sub_contents = render_toc_list(\@sub_toc, $depth + 1);
+				$list_item .= "\n<UL>\n${sub_contents}</UL>" if ($sub_contents);
+			}
+		}
+		
+		$contents .= "<LI>\n${list_item}\n</LI>\n";
+	}
+	return $contents;
+}
+
+# Get content from a file in a directory (for group expansion)
+sub get_file_content {
+	my ($dir, $filename) = @_;
+	my $file = resolve_content_file($dir, $filename);
+	return '' unless -f $file;
+	open(my $fh, '<', $file) or return '';
+	local $/;
+	my $content = <$fh>;
+	close($fh);
+	return $content;
 }
 
 # Navigation subroutines ~~~~~~~--------------------------------------------- #
@@ -2161,6 +2178,9 @@ $_NSI_CONTENT = transform_nsi_image_tags($_NSI_CONTENT) if ($_NSI_CONTENT);
 
 # Transform NSI collage blocks (must run after transform_nsi_image_tags)
 $_NSI_CONTENT = transform_nsi_collage_tags($_NSI_CONTENT) if ($_NSI_CONTENT);
+
+# Transform NSI banner tags
+$_NSI_CONTENT = transform_nsi_banner_tags($_NSI_CONTENT) if ($_NSI_CONTENT);
 
 # Process image previews, if applicable
 process_page_images(); 

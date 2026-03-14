@@ -2,8 +2,7 @@
 # NSI: The New Standard Index ----------------------------------------------- #
 my $version = '3.0.0.0'
 # --------------------------------------------------------------------------- #
-$SITE_CONFIG = "res/config.conf";    # Site-wide default configuration
-$LOCAL_CONFIG = "./res/config.conf"; # Page-local configuration
+$CONFIG_PATH = "res/config.conf";    # Site-wide default configuration
 # --------------------------------------------------------------------------- #
 # /// Dependencies ///                                                        #
 # --------------------------------------------------------------------------- #
@@ -20,7 +19,13 @@ $LOCAL_CONFIG = "./res/config.conf"; # Page-local configuration
 # /// Configuration loading ///
 # --------------------------------------------------------------------------- #
 
-# TODO: Implement new declarative configuration format loading
+sub get_config_value() { # Load key from config file
+  return;
+}
+
+sub read_config() { # Set defaults and override with config values
+  return;
+}
 
 # --------------------------------------------------------------------------- #
 # /// API handler ///
@@ -39,14 +44,94 @@ $LOCAL_CONFIG = "./res/config.conf"; # Page-local configuration
 # Build content subelements from filesystem and configuration
 # --------------------------------------------------------------------------- #
 
-sub html_doctype() { # Set HTML DOCTYPE
+sub navigation() { # Get page navigation data
   return;
 }
 
-# Metadata assembly ########################################################### 
+sub meditate() { # Get a random "meditation" image path
+  return;
+}
 
-sub html_meta_title() { # Get page title from config or content
-  return;l
+sub get_title() { # Get page display title from configuration or content
+  return;
+}
+
+sub get_subtitle() { # Get page subtitle from configuration or content
+  return;
+}
+
+sub get_intro() { # Get page intro from configuration or content
+  return;
+}
+
+sub get_body() { # Assemble body from content
+  return;
+}
+
+sub get_footer() { # Assemble footer from configuration
+  return;
+}
+
+# HTML heading assembly #######################################################
+
+sub html_navigation() { # Generate page navigation element
+  return;
+}
+
+sub html_meditate() { # HTML wrapper for meditation
+  my $meditation;
+  $meditation = "<img id=\"meditation\" src=\"" . $meditation . "\">"
+    if ($meditation = meditate());
+  return($meditation);
+}
+
+sub html_title() { # HTML wrapper for title
+  my $title;
+  $title = "<h1 id=\"title\">" . $title . "</h1>" if ($title = get_title());
+  return($title);
+}
+
+sub html_subtitle() { # HTML wrapper for subtitle
+  my $subtitle;
+  return($subtitle);
+}
+
+sub html_intro() { # HTML wrapper for intro
+  my $intro;
+  $intro = "<p id=\"intro\">" . $intro . "</p>" if ($intro = get_intro());
+  return($intro);
+}
+
+sub html_heading() { # Generate HTML header/title element
+  my $heading, $medtitation, $title, $intro, $navigation;
+  $heading .= $navigation if ($navigation = html_navigation());
+  $heading .= $meditation if ($meditation = html_meditate());
+  $heading .= $title if ($title = html_title());
+  $heading .= $subtitle if ($subtitle = html_subtitle());
+  $heading .= $intro if ($intro = html_intro());
+  return($heading);
+}
+
+# HTML body assembly ##########################################################
+
+sub html_body() {
+  return;
+}
+
+# HTML footer assembly ########################################################
+
+sub html_footer() {
+  return;
+}
+
+# HTML metadata assembly ###################################################### 
+
+sub html_doctype() { # Set HTML DOCTYPE based on client detection
+  return;
+}
+
+sub html_meta_title() { # Get page title from parsed data 
+  return;
 }
 
 sub html_meta_style() { # Get page style block
@@ -78,12 +163,6 @@ sub html_metadata() { # Get page metadata (<head> block)
   $metadata .= "<head>\n${METADATA}</head>\n" if ($metadata);
   return($metadata);
 }
-
-# Header assembly #############################################################
-
-# Body assembly ###############################################################
-
-# Footer assembly #############################################################
 
 # --------------------------------------------------------------------------- #
 # /// Subelement transformation ///

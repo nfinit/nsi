@@ -1,19 +1,59 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index ----------------------------------------------- #
-my $version = '3.0.0.0'
+my $version = '3.0.0.0';
 # --------------------------------------------------------------------------- #
 $CONFIG_PATH = "res/config.conf";    # Site-wide default configuration
 # --------------------------------------------------------------------------- #
-# /// Dependencies ///                                                        #
+# /// Dependencies ///                                                        
 # --------------------------------------------------------------------------- #
 
 # TODO: Setup standard library imports
 
 # --------------------------------------------------------------------------- #
+# /// Utility subroutines ///
+# --------------------------------------------------------------------------- #
+
+sub read_file { # Read entire contents of a file
+  my ($path) = @_;
+  return unless (-f $path);
+  open(my $fh, '<', $path) or return;
+  my $content = do { local $/; <$fh> };
+  close($fh);
+  chomp($content) if ($content);
+  return $content;
+}
+
+sub read_file_lines { # Read a range of file lines
+  my ($path, $from, $to) = @_;
+  return unless (-f $path);
+  open(my $fh, '<', $path) or return;
+  my @lines;
+  my $n = 0;
+  while (my $line = <$fh>) {
+    $n++;
+    next if ($n < $from);
+    last if ($n > $to);
+    chomp($line);
+    push @lines, $line;
+  }
+  close($fh);
+  return wantarray ? @lines : join("\n", @lines);
+}
+
+sub read_file_line { # Read a specific file line
+  my ($path, $line_num) = @_;
+  return read_file_lines($path, $line_num, $line_num);
+}
+
+# --------------------------------------------------------------------------- #
 # /// Input mode handling ///
 # --------------------------------------------------------------------------- #
 
-# TODO: Implement output mode handling with initial CGI-only target
+sub content_header { # Generate CGI response header for a given content type
+  my ($type) = @_;
+  $type //= "text/html";
+  return "Content-type: ${type}\n\n";
+}
 
 # --------------------------------------------------------------------------- #
 # /// Configuration loading ///
@@ -44,7 +84,7 @@ sub read_config() { # Set defaults and override with config values
 # Build content subelements from filesystem and configuration
 # --------------------------------------------------------------------------- #
 
-sub navigation() { # Get page navigation data
+sub get_navigation() { # Get page navigation data
   return;
 }
 
@@ -53,23 +93,75 @@ sub meditate() { # Get a random "meditation" image path
 }
 
 sub get_title() { # Get page display title from configuration or content
-  return;
+  return $PAGE_TITLE if ($PAGE_TITLE);
+  return read_file_line($TITLE_FILE, 1) || read_file_line($TOC_FILE, 1);
 }
 
 sub get_subtitle() { # Get page subtitle from configuration or content
-  return;
+  return $PAGE_SUBTITLE if ($PAGE_SUBTITLE);
+  return read_file_line($TITLE_FILE, 2);
+  # We don't reference TOC_FILE here because an external subtitle
+  # isn't necessarily suitable for the page itself, use a title file instead
 }
 
 sub get_intro() { # Get page intro from configuration or content
-  return;
+  return $PAGE_INTRO if ($PAGE_INTRO);
+  return read_file($INTRO_FILE);
 }
 
 sub get_body() { # Assemble body from content
+  my $body = "";
+  # Get a static body file if it exists 
+  $body .= read_file($BODY_FILE) if (-f $BODY_FILE);
+  # Body fragment directory
+  if (-d "body") {
+    opendir(my $dh, "body") or return $body;
+    my @fragments = sort grep { -f "body/$_" && $_ !~ /^\./ } readdir($dh);
+    closedir($dh);
+    foreach my $fragment (@fragments) {
+      $body .= read_file("body/$fragment");
+    }
+  }
+  return $body if ($body);
   return;
 }
 
+sub get_title_for_path { # Get title for an arbitrary directory path
+  my ($dir_path, $fallback) = @_;
+  $fallback //= "";
+  return $fallback unless ($dir_path);
+  $dir_path =~ s/\/$//;
+  # Title file, then TOC file, then directory basename
+  return read_file_line("${dir_path}/${TITLE_FILE}", 1)
+      || read_file_line("${dir_path}/${TOC_FILE}", 1)
+      || basename($dir_path)
+      || $fallback;
+}
+
+sub get_footer_nav { # Get footer navigation links as raw data
+  my @nav;
+  my $current_dir = Cwd::getcwd();
+  my $doc_root = $ENV{DOCUMENT_ROOT} // "";
+  $current_dir =~ s/\/$//;
+  $doc_root    =~ s/\/$//;
+  my $at_root = ($current_dir eq $doc_root);
+  # Back to top is always present
+  push @nav, { label => "Back to top", href => "#content" };
+  # Parent link if not at root and parent isn't root
+  if (!$at_root && Cwd::abs_path("..") ne Cwd::abs_path($doc_root)) {
+    push @nav, { label => get_title_for_path("..", ".."), href => ".." };
+  }
+  # Home link if not at root
+  if (!$at_root) {
+    push @nav, { label => $HOME_PAGE_TITLE // "Home", href => "/" };
+  }
+  return @nav;
+}
+
 sub get_footer() { # Assemble footer from configuration
-  return;
+  my @footer;
+  push @footer, scalar localtime();
+  return @footer;
 }
 
 # HTML heading assembly #######################################################
@@ -120,14 +212,26 @@ sub html_body() {
 
 # HTML footer assembly ########################################################
 
+sub html_footer_nav { # Generate footer navigation HTML from raw nav data
+  return unless ($FOOTER_NAV);
+  my @nav = get_footer_nav();
+  return unless (@nav);
+  my @links = map { "<a href=\"$_->{href}\">$_->{label}</a>" } @nav;
+  return join(" | ", @links);
+}
+
 sub html_footer() {
-  return;
+  my @footer = get_footer();
+  my $nav = html_footer_nav();
+  push @footer, $nav if ($nav);
+  return @footer;
 }
 
 # HTML metadata assembly ###################################################### 
 
 sub html_doctype() { # Set HTML DOCTYPE based on client detection
-  return;
+  my $doctype = $HTML_DOCTYPE // 'HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd"';
+  return "<!DOCTYPE ${doctype}>\n";
 }
 
 sub html_meta_title() { # Get page title from parsed data 
@@ -200,6 +304,7 @@ sub html_content() { # Compose all visible HTML content (header, body, footer)
 # Assemble and emit final response to client from subelements
 # --------------------------------------------------------------------------- #
 
+$CONTENT .= content_header();
 $CONTENT .= html_doctype();
 $CONTENT .= "<html>\n";
 $CONTENT .= html_metadata();

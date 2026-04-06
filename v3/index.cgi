@@ -1,13 +1,14 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index ----------------------------------------------- #
-my $version = '3.0.0.0';
+my $version = '3.0.0.1';
 # --------------------------------------------------------------------------- #
 $CONFIG_PATH = "res/config.conf";    # Site-wide default configuration
 # --------------------------------------------------------------------------- #
 # /// Dependencies ///                                                        
 # --------------------------------------------------------------------------- #
 
-# TODO: Setup standard library imports
+use Cwd qw(getcwd abs_path);
+use File::Basename qw(basename);
 
 # --------------------------------------------------------------------------- #
 # /// Utility subroutines ///
@@ -59,13 +60,59 @@ sub content_header { # Generate CGI response header for a given content type
 # /// Configuration loading ///
 # --------------------------------------------------------------------------- #
 
-sub get_config_value() { # Load key from config file
+sub get_config_value { # Load key from config file
+  my ($key) = @_;
+  return unless ($key && -f $CONFIG_PATH);
+  open(my $fh, '<', $CONFIG_PATH) or return;
+  while (my $line = <$fh>) {
+    chomp($line);
+    $line =~ s/^\s+|\s+$//g;
+    next if ($line =~ /^#/ || $line eq "");
+    if ($line =~ /^(\w+)\s*=\s*(.*)$/) {
+      my ($k, $v) = ($1, $2);
+      $v =~ s/\s+$//;
+      if ($k eq $key) {
+        close($fh);
+        return $v;
+      }
+    }
+  }
+  close($fh);
   return;
 }
 
-sub read_config() { # Set defaults and override with config values
-  return;
+sub read_config { # Set defaults and override with config values
+  # Content file conventions (internal, not user-configurable)
+  $TITLE_FILE = "title";
+  $INTRO_FILE = "intro.html";
+  $BODY_FILE  = "body.html";
+  $TOC_FILE   = "info";
+
+  # Display defaults
+  $HOME_PAGE_TITLE = "Home";
+  $FOOTER_NAV      = 1;
+  $FAVICON         = "/res/sys/favicon.ico";
+  $HTML_DOCTYPE    = "html";
+
+  # Output accumulators
+  $CONTENT  = "";
+  $METADATA = "";
+
+  # Override from config file
+  my $v;
+  $HOME_PAGE_TITLE = $v if ($v = get_config_value("home_page_title"));
+  $FOOTER_NAV      = $v if ($v = get_config_value("footer_nav"));
+  $FAVICON         = $v if ($v = get_config_value("favicon"));
+
+  # Per-page overrides (only set if present in config)
+  $PAGE_TITLE            = $v if ($v = get_config_value("page_title"));
+  $PAGE_SUBTITLE         = $v if ($v = get_config_value("page_subtitle"));
+  $PAGE_INTRO            = $v if ($v = get_config_value("page_intro"));
+  $PAGE_META_DESCRIPTION = $v if ($v = get_config_value("page_meta_description"));
+  $PAGE_META_KEYWORDS    = $v if ($v = get_config_value("page_meta_keywords"));
 }
+
+read_config();
 
 # --------------------------------------------------------------------------- #
 # /// API handler ///
@@ -110,19 +157,27 @@ sub get_intro() { # Get page intro from configuration or content
 }
 
 sub get_body() { # Assemble body from content
-  my $body = "";
-  # Get a static body file if it exists 
-  $body .= read_file($BODY_FILE) if (-f $BODY_FILE);
+  my @body_chunks;
+  # Get a static body file if it exists
+  if (-f $BODY_FILE) {
+    my $body_file = read_file($BODY_FILE);
+    push @body_chunks, $body_file if defined($body_file) && $body_file ne "";
+  }
   # Body fragment directory
   if (-d "body") {
-    opendir(my $dh, "body") or return $body;
+    unless (opendir(my $dh, "body")) {
+      return join("\n", @body_chunks) if (@body_chunks);
+      return;
+    }
     my @fragments = sort grep { -f "body/$_" && $_ !~ /^\./ } readdir($dh);
     closedir($dh);
     foreach my $fragment (@fragments) {
-      $body .= read_file("body/$fragment");
+      my $fragment_content = read_file("body/$fragment");
+      push @body_chunks, $fragment_content
+        if defined($fragment_content) && $fragment_content ne "";
     }
   }
-  return $body if ($body);
+  return join("\n", @body_chunks) if (@body_chunks);
   return;
 }
 
@@ -206,8 +261,10 @@ sub html_heading() { # Generate HTML header/title element
 
 # HTML body assembly ##########################################################
 
-sub html_body() {
-  return;
+sub html_body() { # HTML wrapper for body content
+  my $body;
+  $body = "<main id=\"content\">\n" . $body . "\n</main>\n" if ($body = get_body());
+  return($body);
 }
 
 # HTML footer assembly ########################################################
@@ -275,24 +332,24 @@ sub html_metadata() { # Get page metadata (<head> block)
 # contents of extension directory
 # --------------------------------------------------------------------------- #
 
-sub transform_html_header() { # Transform HTML header with markup extensions
+sub transform_html_header { # Transform HTML header with markup extensions
   my $header = $_[0];
   return $header; 
 }
 
-sub transform_html_body() { # Transform HTML body with markup extensions
+sub transform_html_body { # Transform HTML body with markup extensions
   my $body = $_[0];
   return $body; 
 }
 
-sub transform_html_footer() { # Transform HTML footer with markup extensions
+sub transform_html_footer { # Transform HTML footer with markup extensions
   my $footer = $_[0];
   return $footer; 
 }
 
 sub html_content() { # Compose all visible HTML content (header, body, footer)
   my $content;
-  $content .= transform_html_header(html_header());
+  $content .= transform_html_header(html_heading());
   $content .= transform_html_body(html_body());
   $content .= transform_html_footer(html_footer());
   $content = "<body>\n${content}</body>\n" if ($content);

@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index ----------------------------------------------- #
-my $version = '3.0.0.1';
+my $version = '3.0.0.3';
 # --------------------------------------------------------------------------- #
 $CONFIG_PATH = "res/config.conf";    # Site-wide default configuration
 # --------------------------------------------------------------------------- #
@@ -89,9 +89,14 @@ sub read_config { # Set defaults and override with config values
   $TOC_FILE   = "info";
 
   # Display defaults
+  $SITE_NAME        = "";
+  $ORGANIZATION     = "";
   $HOME_PAGE_TITLE = "Home";
   $FOOTER_NAV      = 1;
   $FAVICON         = "/res/sys/favicon.ico";
+  $SITE_STYLE_DIRECTORY = "/res/style";
+  $MAIN_STYLESHEET = "${SITE_STYLE_DIRECTORY}/style.css";
+  $LEGACY_STYLESHEET = "${SITE_STYLE_DIRECTORY}/legacy.css";
   $HTML_DOCTYPE    = "html";
 
   # Output accumulators
@@ -100,9 +105,14 @@ sub read_config { # Set defaults and override with config values
 
   # Override from config file
   my $v;
+  $SITE_NAME        = $v if ($v = get_config_value("site_name"));
+  $ORGANIZATION     = $v if ($v = get_config_value("organization"));
   $HOME_PAGE_TITLE = $v if ($v = get_config_value("home_page_title"));
   $FOOTER_NAV      = $v if ($v = get_config_value("footer_nav"));
   $FAVICON         = $v if ($v = get_config_value("favicon"));
+  $MAIN_STYLESHEET = $v if ($v = get_config_value("main_stylesheet"));
+  $LEGACY_STYLESHEET = $v if ($v = get_config_value("legacy_stylesheet"));
+  $SITE_STYLE_DIRECTORY = $v if ($v = get_config_value("site_style_directory"));
 
   # Per-page overrides (only set if present in config)
   $PAGE_TITLE            = $v if ($v = get_config_value("page_title"));
@@ -110,6 +120,13 @@ sub read_config { # Set defaults and override with config values
   $PAGE_INTRO            = $v if ($v = get_config_value("page_intro"));
   $PAGE_META_DESCRIPTION = $v if ($v = get_config_value("page_meta_description"));
   $PAGE_META_KEYWORDS    = $v if ($v = get_config_value("page_meta_keywords"));
+
+  if ($SITE_STYLE_DIRECTORY) {
+    $MAIN_STYLESHEET   = "${SITE_STYLE_DIRECTORY}/style.css"
+      unless (get_config_value("main_stylesheet"));
+    $LEGACY_STYLESHEET = "${SITE_STYLE_DIRECTORY}/legacy.css"
+      unless (get_config_value("legacy_stylesheet"));
+  }
 }
 
 read_config();
@@ -274,14 +291,31 @@ sub html_footer_nav { # Generate footer navigation HTML from raw nav data
   my @nav = get_footer_nav();
   return unless (@nav);
   my @links = map { "<a href=\"$_->{href}\">$_->{label}</a>" } @nav;
-  return join(" | ", @links);
+  my $nav = join(" | ", @links);
+  return "<span class=\"footer_navigation no_print\">${nav}</span>";
 }
 
 sub html_footer() {
   my @footer = get_footer();
   my $nav = html_footer_nav();
   push @footer, $nav if ($nav);
-  return @footer;
+  @footer = grep { defined($_) && $_ ne "" } @footer;
+  return unless (@footer);
+
+  my @cells;
+  for my $i (0 .. $#footer) {
+    my $align = "left";
+    $align = "right" if ($i == $#footer && $#footer > 0);
+    $align = "center" if ($i > 0 && $i < $#footer);
+    push @cells, "  <td align=\"${align}\">$footer[$i]</td>\n";
+  }
+
+  my $footer = "<table width=\"100%\" class=\"footer\">\n";
+  $footer .= "<tr>\n";
+  $footer .= join("", @cells);
+  $footer .= "</tr>\n";
+  $footer .= "</table>\n";
+  return $footer;
 }
 
 # HTML metadata assembly ###################################################### 
@@ -292,10 +326,35 @@ sub html_doctype() { # Set HTML DOCTYPE based on client detection
 }
 
 sub html_meta_title() { # Get page title from parsed data 
+  my $title = get_title();
+  my $site_name = $SITE_NAME;
+
+  if (defined($title)) {
+    $title =~ s/^\s+|\s+$//g;
+  }
+  if (defined($site_name)) {
+    $site_name =~ s/^\s+|\s+$//g;
+  }
+
+  if ($site_name && $title && $site_name eq $title) {
+    $title = "";
+  }
+
+  my $page_title = "";
+  $page_title .= $site_name if ($site_name);
+  $page_title .= " - " if ($site_name && $title);
+  $page_title .= $title if ($title);
+  return "<title>${page_title}</title>\n" if ($page_title);
   return;
 }
 
 sub html_meta_style() { # Get page style block
+  my $style = "";
+  $style .= "<link rel=\"stylesheet\" href=\"${LEGACY_STYLESHEET}\">\n"
+    if ($LEGACY_STYLESHEET);
+  $style .= "<link rel=\"stylesheet\" href=\"${MAIN_STYLESHEET}\">\n"
+    if ($MAIN_STYLESHEET);
+  return $style if ($style);
   return;
 }
 
@@ -315,14 +374,15 @@ sub html_meta_keywords() { # Get page keywords from config or content
 }
 
 sub html_metadata() { # Get page metadata (<head> block)
-  my $metadata;
-  $metadata .= html_meta_title(); 
+  my $metadata = "";
+  $metadata .= html_meta_title();
   $metadata .= html_meta_style();
-  $metadata .= html_meta_favicon(); 
+  $metadata .= html_meta_favicon();
   $metadata .= html_meta_description();
   $metadata .= html_meta_keywords();
-  $metadata .= "<head>\n${METADATA}</head>\n" if ($metadata);
-  return($metadata);
+  $metadata .= $METADATA if ($METADATA);
+  return "<head>\n${metadata}</head>\n" if ($metadata);
+  return;
 }
 
 # --------------------------------------------------------------------------- #

@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index ----------------------------------------------- #
-my $version = '3.0.0.3';
+my $version = '3.0.0.5';
 # --------------------------------------------------------------------------- #
 $CONFIG_PATH = "res/config.conf";    # Site-wide default configuration
 # --------------------------------------------------------------------------- #
@@ -91,6 +91,8 @@ sub read_config { # Set defaults and override with config values
   # Display defaults
   $SITE_NAME        = "";
   $ORGANIZATION     = "";
+  $NAV_POSITION     = "top";
+  $BREADCRUMB_SEPARATOR = " &gt; ";
   $HOME_PAGE_TITLE = "Home";
   $FOOTER_NAV      = 1;
   $FAVICON         = "/res/sys/favicon.ico";
@@ -107,6 +109,8 @@ sub read_config { # Set defaults and override with config values
   my $v;
   $SITE_NAME        = $v if ($v = get_config_value("site_name"));
   $ORGANIZATION     = $v if ($v = get_config_value("organization"));
+  $NAV_POSITION     = $v if ($v = get_config_value("nav_position"));
+  $BREADCRUMB_SEPARATOR = $v if ($v = get_config_value("breadcrumb_separator"));
   $HOME_PAGE_TITLE = $v if ($v = get_config_value("home_page_title"));
   $FOOTER_NAV      = $v if ($v = get_config_value("footer_nav"));
   $FAVICON         = $v if ($v = get_config_value("favicon"));
@@ -149,7 +153,42 @@ read_config();
 # --------------------------------------------------------------------------- #
 
 sub get_navigation() { # Get page navigation data
-  return;
+  my $current_dir = Cwd::getcwd();
+  my $doc_root = $ENV{DOCUMENT_ROOT} // "";
+  return unless ($doc_root);
+  $current_dir =~ s/\/$//;
+  $doc_root    =~ s/\/$//;
+  return unless ($current_dir =~ /^\Q$doc_root\E(?:\/|$)/);
+  return if ($current_dir eq $doc_root);
+
+  my @breadcrumbs = ({
+    label => $HOME_PAGE_TITLE // "Home",
+    href => "/",
+    current => 0,
+  });
+
+  my $relative_path = $current_dir;
+  $relative_path =~ s/^\Q$doc_root\E\/?//;
+  my @segments = split(/\//, $relative_path);
+
+  my $cumulative_path = $doc_root;
+  for (my $i = 0; $i < @segments; $i++) {
+    my $segment = $segments[$i];
+    next unless ($segment);
+    $cumulative_path .= "/$segment";
+
+    my $href = $cumulative_path;
+    $href =~ s/^\Q$doc_root\E//;
+    $href = "/" if ($href eq "");
+
+    push @breadcrumbs, {
+      label => get_title_for_path($cumulative_path, $segment),
+      href => $href,
+      current => ($i == $#segments) ? 1 : 0,
+    };
+  }
+
+  return @breadcrumbs;
 }
 
 sub meditate() { # Get a random "meditation" image path
@@ -238,8 +277,31 @@ sub get_footer() { # Assemble footer from configuration
 
 # HTML heading assembly #######################################################
 
-sub html_navigation() { # Generate page navigation element
-  return;
+sub navigation_position() { # Normalize navigation position setting
+  my $position = lc($NAV_POSITION // "top");
+  return "none" if ($position eq "none" || $position eq "0");
+  return "bottom" if ($position eq "bottom" || $position eq "-1");
+  return "top";
+}
+
+sub html_navigation { # Generate page navigation element
+  my ($position) = @_;
+  $position //= "top";
+  return unless (navigation_position() eq $position);
+
+  my @breadcrumbs = get_navigation();
+  return unless (@breadcrumbs);
+
+  my @items;
+  foreach my $crumb (@breadcrumbs) {
+    my $item = $crumb->{label};
+    $item = "<a href=\"$crumb->{href}\">$item</a>" unless ($crumb->{current});
+    push @items, "<span class=\"breadcrumb_item\">${item}</span>";
+  }
+
+  my $separator = $BREADCRUMB_SEPARATOR // " &gt; ";
+  my $navigation = join($separator, @items);
+  return "<div id=\"navigation\" class=\"no_print\">\n${navigation}\n</div>\n";
 }
 
 sub html_meditate() { # HTML wrapper for meditation
@@ -268,7 +330,7 @@ sub html_intro() { # HTML wrapper for intro
 
 sub html_heading() { # Generate HTML header/title element
   my $heading, $medtitation, $title, $intro, $navigation;
-  $heading .= $navigation if ($navigation = html_navigation());
+  $heading .= $navigation if ($navigation = html_navigation("top"));
   $heading .= $meditation if ($meditation = html_meditate());
   $heading .= $title if ($title = html_title());
   $heading .= $subtitle if ($subtitle = html_subtitle());
@@ -280,7 +342,7 @@ sub html_heading() { # Generate HTML header/title element
 
 sub html_body() { # HTML wrapper for body content
   my $body;
-  $body = "<main id=\"content\">\n" . $body . "\n</main>\n" if ($body = get_body());
+  $body = "<main>\n" . $body . "\n</main>\n" if ($body = get_body());
   return($body);
 }
 
@@ -411,8 +473,9 @@ sub html_content() { # Compose all visible HTML content (header, body, footer)
   my $content;
   $content .= transform_html_header(html_heading());
   $content .= transform_html_body(html_body());
+  $content .= transform_html_header(html_navigation("bottom"));
   $content .= transform_html_footer(html_footer());
-  $content = "<body>\n${content}</body>\n" if ($content);
+  $content = "<body>\n<div id=\"content\">\n${content}</div>\n</body>\n" if ($content);
   return $content;
 }
 

@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index ----------------------------------------------- #
-my $version = '3.0.0.6';
+my $version = '3.0.0.7';
 # --------------------------------------------------------------------------- #
 $CONFIG_PATH = "res/config.conf";    # Site-wide default configuration
 # --------------------------------------------------------------------------- #
@@ -56,6 +56,14 @@ sub content_header { # Generate CGI response header for a given content type
   return "Content-type: ${type}\n\n";
 }
 
+sub config_enabled { # Interpret common boolean config strings
+  my ($value) = @_;
+  return 0 unless defined($value);
+  return 0 if ($value =~ /^(?:0|false|no|off)$/i);
+  return 1 if ($value =~ /^(?:1|true|yes|on)$/i);
+  return $value ? 1 : 0;
+}
+
 # --------------------------------------------------------------------------- #
 # /// Configuration loading ///
 # --------------------------------------------------------------------------- #
@@ -93,6 +101,11 @@ sub read_config { # Set defaults and override with config values
   $ORGANIZATION     = "";
   $NAV_POSITION     = "top";
   $BREADCRUMB_SEPARATOR = " &gt; ";
+  $SHOW_TOC         = 1;
+  $TREE_TOC         = 1;
+  $TOC_TITLE        = "";
+  $TOC_SUBTITLE     = "";
+  $APPEND_TOC_TO_BODY = 1;
   $HOME_PAGE_TITLE = "Home";
   $FOOTER_NAV      = 1;
   $FAVICON         = "/res/sys/favicon.ico";
@@ -111,6 +124,11 @@ sub read_config { # Set defaults and override with config values
   $ORGANIZATION     = $v if ($v = get_config_value("organization"));
   $NAV_POSITION     = $v if ($v = get_config_value("nav_position"));
   $BREADCRUMB_SEPARATOR = $v if ($v = get_config_value("breadcrumb_separator"));
+  $SHOW_TOC         = $v if defined($v = get_config_value("show_toc"));
+  $TREE_TOC         = $v if defined($v = get_config_value("tree_toc"));
+  $TOC_TITLE        = $v if ($v = get_config_value("toc_title"));
+  $TOC_SUBTITLE     = $v if ($v = get_config_value("toc_subtitle"));
+  $APPEND_TOC_TO_BODY = $v if defined($v = get_config_value("append_toc_to_body"));
   $HOME_PAGE_TITLE = $v if ($v = get_config_value("home_page_title"));
   $FOOTER_NAV      = $v if ($v = get_config_value("footer_nav"));
   $FAVICON         = $v if ($v = get_config_value("favicon"));
@@ -237,6 +255,57 @@ sub get_body() { # Assemble body from content
   return;
 }
 
+sub get_toc_entry { # Get TOC entry data for a directory
+  my ($dir_path) = @_;
+  return unless ($dir_path && -d $dir_path);
+  my $info_path = "${dir_path}/${TOC_FILE}";
+  return unless (-f $info_path);
+
+  my $title = read_file_line($info_path, 1);
+  return unless defined($title) && $title ne "";
+
+  my $description = read_file($info_path);
+  if (defined($description)) {
+    my @parts = split(/\n/, $description, 2);
+    $description = $parts[1] // "";
+    $description =~ s/^\s+|\s+$//g;
+  }
+
+  my $path = $dir_path;
+  $path =~ s#^\./##;
+  $path .= "/" unless ($path =~ /\/$/);
+
+  return {
+    title => $title,
+    path => $path,
+    description => $description,
+    fs_path => $dir_path,
+  };
+}
+
+sub get_toc { # Get table of contents data
+  return unless (config_enabled($SHOW_TOC));
+  return unless (config_enabled($TREE_TOC));
+  my $dh;
+  unless (opendir($dh, ".")) {
+    return;
+  }
+
+  my @entries;
+  foreach my $item (readdir($dh)) {
+    next if ($item =~ /^\.\.?$/);
+    next unless (-d $item);
+    my $entry = get_toc_entry($item);
+    push @entries, $entry if ($entry);
+  }
+  closedir($dh);
+
+  @entries = sort {
+    lc($a->{title}) cmp lc($b->{title})
+  } @entries;
+  return @entries;
+}
+
 sub get_title_for_path { # Get title for an arbitrary directory path
   my ($dir_path, $fallback) = @_;
   $fallback //= "";
@@ -341,15 +410,23 @@ sub html_heading() { # Generate HTML header/title element
 # HTML body assembly ##########################################################
 
 sub html_body() { # HTML wrapper for body content
-  my $body;
-  $body = "<main>\n" . $body . "\n</main>\n" if ($body = get_body());
-  return($body);
+  my $body = get_body();
+  my $toc = html_toc();
+  my @main_sections;
+
+  push @main_sections, $body if ($body);
+  if ($toc && (!$body || config_enabled($APPEND_TOC_TO_BODY))) {
+    push @main_sections, $toc;
+  }
+
+  return unless (@main_sections);
+  return "<main>\n" . join("\n", @main_sections) . "\n</main>\n";
 }
 
 # HTML footer assembly ########################################################
 
 sub html_footer_nav { # Generate footer navigation HTML from raw nav data
-  return unless ($FOOTER_NAV);
+  return unless (config_enabled($FOOTER_NAV));
   my @nav = get_footer_nav();
   return unless (@nav);
   my @links = map { "<a href=\"$_->{href}\">$_->{label}</a>" } @nav;
@@ -381,6 +458,24 @@ sub html_footer() {
 }
 
 # HTML metadata assembly ###################################################### 
+
+sub html_toc { # HTML wrapper for table of contents
+  my @entries = get_toc();
+  return unless (@entries);
+
+  my @items;
+  foreach my $entry (@entries) {
+    my $item = "<a href=\"$entry->{path}\">$entry->{title}</a>";
+    $item = "<h3>${item}</h3>";
+    $item .= "\n<p>$entry->{description}</p>" if ($entry->{description});
+    push @items, "<li>\n${item}\n</li>\n";
+  }
+
+  my $toc = "<ul>\n" . join("", @items) . "</ul>\n";
+  $toc = "<p>\n${TOC_SUBTITLE}</p>\n${toc}" if ($TOC_SUBTITLE);
+  $toc = "<h2>${TOC_TITLE}</h2>\n${toc}" if ($TOC_TITLE);
+  return "<div id=\"contents\">\n${toc}</div>\n";
+}
 
 sub html_doctype() { # Set HTML DOCTYPE based on client detection
   my $doctype = $HTML_DOCTYPE // 'HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd"';

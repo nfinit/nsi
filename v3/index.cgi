@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index ----------------------------------------------- #
-my $version = '3.0.0.5';
+my $version = '3.0.0.6';
 # --------------------------------------------------------------------------- #
 $CONFIG_PATH = "res/config.conf";    # Site-wide default configuration
 # --------------------------------------------------------------------------- #
@@ -431,7 +431,7 @@ sub html_meta_description() { # Get page description from config or content
 }
 
 sub html_meta_keywords() { # Get page keywords from config or content
-  return "<meta name=\"description\" content=\"${PAGE_META_KEYWORDS}\">\n" if ($PAGE_META_KEYWORDS);
+  return "<meta name=\"keywords\" content=\"${PAGE_META_KEYWORDS}\">\n" if ($PAGE_META_KEYWORDS);
   return;
 }
 

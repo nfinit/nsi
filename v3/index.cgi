@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index ----------------------------------------------- #
-my $version = '3.0.0.12';
+my $version = '3.0.0.13';
 # --------------------------------------------------------------------------- #
 
 use strict;
@@ -98,6 +98,12 @@ sub config_enabled {
   return $value ? 1 : 0;
 }
 
+sub content_header {
+  my ($type) = @_;
+  $type = "text/html" unless defined($type) && $type ne "";
+  return "Content-type: ${type}\n\n";
+}
+
 sub debug_enabled {
   return 1 if ($RUNTIME{cli_verbose});
   return config_enabled($CONFIG{DEBUG_TRACE});
@@ -107,7 +113,7 @@ sub debug_line {
   my ($phase, $message) = @_;
   return unless (debug_enabled());
   return unless (defined($message) && $message ne "");
-  $phase //= "general";
+  $phase = "general" unless defined($phase) && $phase ne "";
   my $line = "[" . sprintf("%.6f", time()) . "] [$phase] $message\n";
 
   if ($RUNTIME{mode} eq "cli") {
@@ -126,7 +132,7 @@ sub debug_comment_block {
 
 sub html_escape {
   my ($text) = @_;
-  $text //= "";
+  $text = "" unless defined($text);
   $text =~ s/&/&amp;/g;
   $text =~ s/</&lt;/g;
   $text =~ s/>/&gt;/g;
@@ -136,16 +142,16 @@ sub html_escape {
 
 sub emit_error {
   my ($message) = @_;
-  $message //= "Unknown error";
+  $message = "Unknown error" unless defined($message) && $message ne "";
 
   if ($RUNTIME{mode} eq "cgi") {
     my $safe = html_escape($message);
-    print "Content-type: text/html\n\n";
-    print "<!DOCTYPE html>\n";
-    print "<html><head><title>NSI Error</title></head><body>\n";
-    print "<h1>NSI Error</h1>\n";
-    print "<pre>${safe}</pre>\n";
-    print "</body></html>\n";
+    print content_header("text/html");
+    print "<!DOCTYPE $CONFIG{HTML_DOCTYPE}>\n";
+    print "<HTML>\n<HEAD>\n<TITLE>NSI Error</TITLE>\n</HEAD>\n<BODY>\n";
+    print "<H1>NSI Error</H1>\n";
+    print "<PRE>${safe}</PRE>\n";
+    print "</BODY>\n</HTML>\n";
   } else {
     print STDERR "NSI error: ${message}\n";
   }
@@ -405,8 +411,11 @@ sub resolve_runtime {
     $RUNTIME{document_root} = $RUNTIME{cli_root} if ($RUNTIME{cli_root});
   }
 
+  my $initial_document_root = defined($RUNTIME{document_root})
+    ? $RUNTIME{document_root}
+    : "(unset)";
   debug_line("path resolution", "Logical cwd: $RUNTIME{logical_cwd}");
-  debug_line("path resolution", "Initial document root: " . ($RUNTIME{document_root} // "(unset)"));
+  debug_line("path resolution", "Initial document root: $initial_document_root");
 
   if ($RUNTIME{cli_config}) {
     $RUNTIME{site_config} = $RUNTIME{cli_config};
@@ -423,7 +432,9 @@ sub resolve_runtime {
   emit_error("Site configuration file ($SITE_CONFIG_NAME) not found in any parent directory.")
     unless ($RUNTIME{site_config});
 
-  $RUNTIME{document_root} //= $RUNTIME{site_root};
+  if (!defined($RUNTIME{document_root}) || $RUNTIME{document_root} eq "") {
+    $RUNTIME{document_root} = $RUNTIME{site_root};
+  }
   $ENV{DOCUMENT_ROOT} = $RUNTIME{document_root} if ($RUNTIME{document_root});
 
   emit_error("Unable to resolve DOCUMENT_ROOT in CLI mode")
@@ -453,20 +464,14 @@ sub resolve_runtime {
     $CONFIG{DEBUG_TRACE} = 1;
   }
 
-  debug_line("config discovery/load", "Local override: " . ($RUNTIME{local_config} // "(none)"));
-  debug_line("runtime detection", "Target: " . ($RUNTIME{cli_target} // "(unset)"));
-}
-
-sub hook_post_config {
-  debug_line("post-config", "Post-config hook stub reached");
-}
-
-sub hook_pre_render_body {
-  debug_line("pre-render body", "Pre-render body hook stub reached");
-}
-
-sub hook_pre_output {
-  debug_line("pre-output", "Pre-output hook stub reached");
+  my $local_override = defined($RUNTIME{local_config})
+    ? $RUNTIME{local_config}
+    : "(none)";
+  my $target = defined($RUNTIME{cli_target})
+    ? $RUNTIME{cli_target}
+    : "(unset)";
+  debug_line("config discovery/load", "Local override: $local_override");
+  debug_line("runtime detection", "Target: $target");
 }
 
 # --------------------------------------------------------------------------- #
@@ -635,7 +640,7 @@ sub get_toc_entry {
   my $description = read_text_file($info_path);
   if (defined($description)) {
     my @parts = split(/\n/, $description, 2);
-    $description = $parts[1] // "";
+    $description = defined($parts[1]) ? $parts[1] : "";
     $description =~ s/^\s+//;
     $description =~ s/\s+$//;
   }
@@ -644,8 +649,6 @@ sub get_toc_entry {
     title       => $title,
     path        => url_for_dir($dir_path) . "/",
     description => $description,
-    is_group    => (-f content_file_path($dir_path, $CONFIG{GROUP_FILE})) ? 1 : 0,
-    fs_path     => $dir_path,
   };
 }
 
@@ -700,7 +703,8 @@ sub resolve_local_path {
 # --------------------------------------------------------------------------- #
 
 sub navigation_position {
-  my $position = lc($CONFIG{NAV_POSITION} // "top");
+  my $position = defined($CONFIG{NAV_POSITION}) ? $CONFIG{NAV_POSITION} : "top";
+  $position = lc($position);
   return "none" if ($position eq "none" || $position eq "0");
   return "bottom" if ($position eq "bottom" || $position eq "-1");
   return "top";
@@ -708,7 +712,7 @@ sub navigation_position {
 
 sub html_navigation {
   my ($position) = @_;
-  $position //= "top";
+  $position = "top" unless defined($position) && $position ne "";
   return unless (navigation_position() eq $position);
 
   my @breadcrumbs = get_navigation();
@@ -771,8 +775,6 @@ sub html_toc {
 }
 
 sub html_body {
-  hook_pre_render_body();
-
   my $body = get_body();
   my $toc  = html_toc();
   my @sections;
@@ -887,27 +889,6 @@ sub html_metadata {
 }
 
 # --------------------------------------------------------------------------- #
-# /// Subelement transformation ///
-# Placeholder hook points for later extension work between raw assembly and
-# final output
-# --------------------------------------------------------------------------- #
-
-sub transform_html_header {
-  my ($html) = @_;
-  return $html;
-}
-
-sub transform_html_body {
-  my ($html) = @_;
-  return $html;
-}
-
-sub transform_html_footer {
-  my ($html) = @_;
-  return $html;
-}
-
-# --------------------------------------------------------------------------- #
 # /// Content assembly ///
 # Compose the final page from assembled subelements in top-to-bottom order:
 # heading, body, bottom navigation, footer, then wrap and emit
@@ -915,10 +896,10 @@ sub transform_html_footer {
 
 sub html_content {
   my $content = "";
-  $content .= transform_html_header(html_heading() || "");
-  $content .= transform_html_body(html_body() || "");
-  $content .= transform_html_header(html_navigation("bottom") || "");
-  $content .= transform_html_footer(html_footer() || "");
+  $content .= html_heading() || "";
+  $content .= html_body() || "";
+  $content .= html_navigation("bottom") || "";
+  $content .= html_footer() || "";
   return unless ($content);
   return "<BODY>\n<DIV ID=\"content\">\n${content}</DIV>\n</BODY>\n";
 }
@@ -927,12 +908,10 @@ sub render_page {
   debug_line("content resolution", "Current URL path: " . current_directory_url());
   my $metadata = html_metadata() || "";
   my $body = html_content() || "";
-
-  hook_pre_output();
   debug_line("render/output", "Emitting HTML response");
 
   my $content = "";
-  $content .= "Content-type: text/html\n\n" if ($RUNTIME{mode} eq "cgi");
+  $content .= content_header("text/html") if ($RUNTIME{mode} eq "cgi");
   $content .= html_doctype();
   $content .= "<HTML>\n";
   $content .= $metadata;
@@ -948,6 +927,5 @@ sub render_page {
 # --------------------------------------------------------------------------- #
 
 resolve_runtime();
-hook_post_config();
 my $output = render_page();
 print $output;

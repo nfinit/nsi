@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index ----------------------------------------------- #
-my $version = '3.0.0.7';
+my $version = '3.0.0.9';
 # --------------------------------------------------------------------------- #
 $CONFIG_PATH = "res/config.conf";    # Site-wide default configuration
 # --------------------------------------------------------------------------- #
@@ -64,6 +64,30 @@ sub config_enabled { # Interpret common boolean config strings
   return $value ? 1 : 0;
 }
 
+sub resolve_local_path { # Resolve site-relative asset path to a local file
+  my ($path) = @_;
+  return unless ($path);
+
+  if ($path =~ m{^/}) {
+    my $doc_root = $ENV{DOCUMENT_ROOT};
+    return "${doc_root}${path}" if ($doc_root && -f "${doc_root}${path}");
+
+    my $search_dir = Cwd::getcwd();
+    while ($search_dir) {
+      my $candidate = "${search_dir}${path}";
+      return $candidate if (-f $candidate);
+      last if ($search_dir eq "/");
+      $search_dir =~ s{/[^/]+$}{};
+      $search_dir = "/" if ($search_dir eq "");
+    }
+    return;
+  }
+
+  my $candidate = Cwd::getcwd() . "/" . $path;
+  return $candidate if (-f $candidate);
+  return;
+}
+
 # --------------------------------------------------------------------------- #
 # /// Configuration loading ///
 # --------------------------------------------------------------------------- #
@@ -108,11 +132,13 @@ sub read_config { # Set defaults and override with config values
   $APPEND_TOC_TO_BODY = 1;
   $HOME_PAGE_TITLE = "Home";
   $FOOTER_NAV      = 1;
+  $API_ENABLED     = 1;
+  $DEBUG_TRACE     = 0;
   $FAVICON         = "/res/sys/favicon.ico";
   $SITE_STYLE_DIRECTORY = "/res/style";
   $MAIN_STYLESHEET = "${SITE_STYLE_DIRECTORY}/style.css";
   $LEGACY_STYLESHEET = "${SITE_STYLE_DIRECTORY}/legacy.css";
-  $HTML_DOCTYPE    = "html";
+  $HTML_DOCTYPE    = 'HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd"';
 
   # Output accumulators
   $CONTENT  = "";
@@ -131,6 +157,8 @@ sub read_config { # Set defaults and override with config values
   $APPEND_TOC_TO_BODY = $v if defined($v = get_config_value("append_toc_to_body"));
   $HOME_PAGE_TITLE = $v if ($v = get_config_value("home_page_title"));
   $FOOTER_NAV      = $v if ($v = get_config_value("footer_nav"));
+  $API_ENABLED     = $v if defined($v = get_config_value("api_enabled"));
+  $DEBUG_TRACE     = $v if defined($v = get_config_value("debug_trace"));
   $FAVICON         = $v if ($v = get_config_value("favicon"));
   $MAIN_STYLESHEET = $v if ($v = get_config_value("main_stylesheet"));
   $LEGACY_STYLESHEET = $v if ($v = get_config_value("legacy_stylesheet"));
@@ -364,25 +392,25 @@ sub html_navigation { # Generate page navigation element
   my @items;
   foreach my $crumb (@breadcrumbs) {
     my $item = $crumb->{label};
-    $item = "<a href=\"$crumb->{href}\">$item</a>" unless ($crumb->{current});
-    push @items, "<span class=\"breadcrumb_item\">${item}</span>";
+    $item = "<A HREF=\"$crumb->{href}\">$item</A>" unless ($crumb->{current});
+    push @items, "<SPAN CLASS=\"breadcrumb_item\">${item}</SPAN>";
   }
 
   my $separator = $BREADCRUMB_SEPARATOR // " &gt; ";
   my $navigation = join($separator, @items);
-  return "<div id=\"navigation\" class=\"no_print\">\n${navigation}\n</div>\n";
+  return "<DIV ID=\"navigation\" CLASS=\"no_print\">\n${navigation}\n</DIV>\n";
 }
 
 sub html_meditate() { # HTML wrapper for meditation
   my $meditation;
-  $meditation = "<img id=\"meditation\" src=\"" . $meditation . "\">"
+  $meditation = "<IMG ID=\"meditation\" SRC=\"" . $meditation . "\">"
     if ($meditation = meditate());
   return($meditation);
 }
 
 sub html_title() { # HTML wrapper for title
   my $title;
-  $title = "<h1 id=\"title\">" . $title . "</h1>" if ($title = get_title());
+  $title = "<H1 ID=\"title\"><B>" . $title . "</B></H1>" if ($title = get_title());
   return($title);
 }
 
@@ -393,7 +421,7 @@ sub html_subtitle() { # HTML wrapper for subtitle
 
 sub html_intro() { # HTML wrapper for intro
   my $intro;
-  $intro = "<p id=\"intro\">" . $intro . "</p>" if ($intro = get_intro());
+  $intro = "<DIV ID=\"intro\">\n" . $intro . "\n</DIV>" if ($intro = get_intro());
   return($intro);
 }
 
@@ -420,7 +448,7 @@ sub html_body() { # HTML wrapper for body content
   }
 
   return unless (@main_sections);
-  return "<main>\n" . join("\n", @main_sections) . "\n</main>\n";
+  return "<DIV ID=\"body\">\n" . join("\n", @main_sections) . "\n</DIV>\n";
 }
 
 # HTML footer assembly ########################################################
@@ -429,9 +457,9 @@ sub html_footer_nav { # Generate footer navigation HTML from raw nav data
   return unless (config_enabled($FOOTER_NAV));
   my @nav = get_footer_nav();
   return unless (@nav);
-  my @links = map { "<a href=\"$_->{href}\">$_->{label}</a>" } @nav;
+  my @links = map { "<A HREF=\"$_->{href}\">$_->{label}</A>" } @nav;
   my $nav = join(" | ", @links);
-  return "<span class=\"footer_navigation no_print\">${nav}</span>";
+  return "<SPAN CLASS=\"footer_navigation no_print\">${nav}</SPAN>";
 }
 
 sub html_footer() {
@@ -446,14 +474,14 @@ sub html_footer() {
     my $align = "left";
     $align = "right" if ($i == $#footer && $#footer > 0);
     $align = "center" if ($i > 0 && $i < $#footer);
-    push @cells, "  <td align=\"${align}\">$footer[$i]</td>\n";
+    push @cells, "  <TD ALIGN=\"${align}\">$footer[$i]</TD>\n";
   }
 
-  my $footer = "<table width=\"100%\" class=\"footer\">\n";
-  $footer .= "<tr>\n";
+  my $footer = "<TABLE WIDTH=\"100%\" CLASS=\"footer\">\n";
+  $footer .= "<TR>\n";
   $footer .= join("", @cells);
-  $footer .= "</tr>\n";
-  $footer .= "</table>\n";
+  $footer .= "</TR>\n";
+  $footer .= "</TABLE>\n";
   return $footer;
 }
 
@@ -465,16 +493,16 @@ sub html_toc { # HTML wrapper for table of contents
 
   my @items;
   foreach my $entry (@entries) {
-    my $item = "<a href=\"$entry->{path}\">$entry->{title}</a>";
-    $item = "<h3>${item}</h3>";
-    $item .= "\n<p>$entry->{description}</p>" if ($entry->{description});
-    push @items, "<li>\n${item}\n</li>\n";
+    my $item = "<A HREF=\"$entry->{path}\">$entry->{title}</A>";
+    $item = "<H3>${item}</H3>";
+    $item .= "\n<P>$entry->{description}</P>" if ($entry->{description});
+    push @items, "<LI>\n${item}\n</LI>\n";
   }
 
-  my $toc = "<ul>\n" . join("", @items) . "</ul>\n";
-  $toc = "<p>\n${TOC_SUBTITLE}</p>\n${toc}" if ($TOC_SUBTITLE);
-  $toc = "<h2>${TOC_TITLE}</h2>\n${toc}" if ($TOC_TITLE);
-  return "<div id=\"contents\">\n${toc}</div>\n";
+  my $toc = "<UL>\n" . join("", @items) . "</UL>\n";
+  $toc = "<P>\n${TOC_SUBTITLE}</P>\n${toc}" if ($TOC_SUBTITLE);
+  $toc = "<H2>${TOC_TITLE}</H2>\n${toc}" if ($TOC_TITLE);
+  return "<DIV ID=\"contents\">\n${toc}</DIV>\n";
 }
 
 sub html_doctype() { # Set HTML DOCTYPE based on client detection
@@ -501,32 +529,39 @@ sub html_meta_title() { # Get page title from parsed data
   $page_title .= $site_name if ($site_name);
   $page_title .= " - " if ($site_name && $title);
   $page_title .= $title if ($title);
-  return "<title>${page_title}</title>\n" if ($page_title);
+  return "<TITLE>${page_title}</TITLE>\n" if ($page_title);
   return;
 }
 
 sub html_meta_style() { # Get page style block
   my $style = "";
-  $style .= "<link rel=\"stylesheet\" href=\"${LEGACY_STYLESHEET}\">\n"
-    if ($LEGACY_STYLESHEET);
-  $style .= "<link rel=\"stylesheet\" href=\"${MAIN_STYLESHEET}\">\n"
+  my $legacy_path = resolve_local_path($LEGACY_STYLESHEET);
+  if ($legacy_path && open(my $style_fh, '<', $legacy_path)) {
+    $style .= "<STYLE><!--\n";
+    while (my $line = <$style_fh>) {
+      $style .= $line;
+    }
+    close($style_fh);
+    $style .= "//--></STYLE>\n";
+  }
+  $style .= "<LINK REL=\"stylesheet\" HREF=\"${MAIN_STYLESHEET}\">\n"
     if ($MAIN_STYLESHEET);
   return $style if ($style);
   return;
 }
 
 sub html_meta_favicon() { # Get favicon if available
-  return "<link rel=\"icon\" TYPE=\"image/x-icon\" href=\"${FAVICON}\">\n" if ($FAVICON);
+  return "<LINK REL=\"icon\" TYPE=\"image/x-icon\" HREF=\"${FAVICON}\">\n" if ($FAVICON);
   return;
 }
 
 sub html_meta_description() { # Get page description from config or content
-  return "<meta name=\"description\" content=\"${PAGE_META_DESCRIPTION}\">\n" if ($PAGE_META_DESCRIPTION);
+  return "<META NAME=\"description\" CONTENT=\"${PAGE_META_DESCRIPTION}\">\n" if ($PAGE_META_DESCRIPTION);
   return;
 }
 
 sub html_meta_keywords() { # Get page keywords from config or content
-  return "<meta name=\"keywords\" content=\"${PAGE_META_KEYWORDS}\">\n" if ($PAGE_META_KEYWORDS);
+  return "<META NAME=\"keywords\" CONTENT=\"${PAGE_META_KEYWORDS}\">\n" if ($PAGE_META_KEYWORDS);
   return;
 }
 
@@ -538,7 +573,7 @@ sub html_metadata() { # Get page metadata (<head> block)
   $metadata .= html_meta_description();
   $metadata .= html_meta_keywords();
   $metadata .= $METADATA if ($METADATA);
-  return "<head>\n${metadata}</head>\n" if ($metadata);
+  return "<HEAD>\n${metadata}</HEAD>\n" if ($metadata);
   return;
 }
 
@@ -570,7 +605,7 @@ sub html_content() { # Compose all visible HTML content (header, body, footer)
   $content .= transform_html_body(html_body());
   $content .= transform_html_header(html_navigation("bottom"));
   $content .= transform_html_footer(html_footer());
-  $content = "<body>\n<div id=\"content\">\n${content}</div>\n</body>\n" if ($content);
+  $content = "<BODY>\n<DIV ID=\"content\">\n${content}</DIV>\n</BODY>\n" if ($content);
   return $content;
 }
 
@@ -581,10 +616,10 @@ sub html_content() { # Compose all visible HTML content (header, body, footer)
 
 $CONTENT .= content_header();
 $CONTENT .= html_doctype();
-$CONTENT .= "<html>\n";
+$CONTENT .= "<HTML>\n";
 $CONTENT .= html_metadata();
 $CONTENT .= html_content();
-$CONTENT .= "</html>\n";
+$CONTENT .= "</HTML>\n";
 
 # --------------------------------------------------------------------------- #
 print $CONTENT if ($CONTENT);

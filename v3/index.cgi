@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index ----------------------------------------------- #
-my $version = '3.0.0.11';
+my $version = '3.0.0.12';
 # --------------------------------------------------------------------------- #
 
 use strict;
@@ -66,6 +66,11 @@ $CONFIG{LEGACY_STYLESHEET} = "$CONFIG{SITE_STYLE_DIRECTORY}/legacy.css";
 
 my $MAIN_STYLESHEET_EXPLICIT   = 0;
 my $LEGACY_STYLESHEET_EXPLICIT = 0;
+
+# --------------------------------------------------------------------------- #
+# /// Core utility subroutines ///
+# Shared helpers that multiple pipeline phases depend on
+# --------------------------------------------------------------------------- #
 
 sub detect_runtime_mode {
   return "cgi" if ($ENV{GATEWAY_INTERFACE} || $ENV{REQUEST_METHOD});
@@ -193,6 +198,12 @@ sub read_text_file_line {
   chomp($line) if defined($line);
   return $line;
 }
+
+# --------------------------------------------------------------------------- #
+# /// Runtime and configuration loading ///
+# Detect execution mode, resolve the current logical location, discover
+# configuration, and finalize the runtime contract before page assembly
+# --------------------------------------------------------------------------- #
 
 sub parse_cli_options {
   local @ARGV = @ARGV;
@@ -458,6 +469,12 @@ sub hook_pre_output {
   debug_line("pre-output", "Pre-output hook stub reached");
 }
 
+# --------------------------------------------------------------------------- #
+# /// Path and content resolution helpers ///
+# These helpers translate between the logical current directory, filesystem
+# content files, and site-relative URLs used during assembly
+# --------------------------------------------------------------------------- #
+
 sub content_file_path {
   my ($dir, $name) = @_;
   return normalize_path("${dir}/${name}");
@@ -676,6 +693,12 @@ sub resolve_local_path {
   return;
 }
 
+# --------------------------------------------------------------------------- #
+# /// Subelement assembly ///
+# Build navigation, titles, body content, TOC data, and footer inputs from
+# the resolved content directory and loaded configuration
+# --------------------------------------------------------------------------- #
+
 sub navigation_position {
   my $position = lc($CONFIG{NAV_POSITION} // "top");
   return "none" if ($position eq "none" || $position eq "0");
@@ -791,6 +814,11 @@ sub html_footer {
     . "</TR>\n</TABLE>\n";
 }
 
+# --------------------------------------------------------------------------- #
+# /// HTML metadata assembly ///
+# Build the <head> block and supporting asset references
+# --------------------------------------------------------------------------- #
+
 sub html_doctype {
   return "<!DOCTYPE $CONFIG{HTML_DOCTYPE}>\n";
 }
@@ -858,6 +886,12 @@ sub html_metadata {
   return;
 }
 
+# --------------------------------------------------------------------------- #
+# /// Subelement transformation ///
+# Placeholder hook points for later extension work between raw assembly and
+# final output
+# --------------------------------------------------------------------------- #
+
 sub transform_html_header {
   my ($html) = @_;
   return $html;
@@ -872,6 +906,12 @@ sub transform_html_footer {
   my ($html) = @_;
   return $html;
 }
+
+# --------------------------------------------------------------------------- #
+# /// Content assembly ///
+# Compose the final page from assembled subelements in top-to-bottom order:
+# heading, body, bottom navigation, footer, then wrap and emit
+# --------------------------------------------------------------------------- #
 
 sub html_content {
   my $content = "";
@@ -901,6 +941,11 @@ sub render_page {
   $content .= "</HTML>\n";
   return $content;
 }
+
+# --------------------------------------------------------------------------- #
+# /// Execution pipeline ///
+# Run the staged assembly process from runtime resolution through final output
+# --------------------------------------------------------------------------- #
 
 resolve_runtime();
 hook_post_config();

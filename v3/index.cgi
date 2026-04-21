@@ -1,62 +1,91 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index ----------------------------------------------- #
-my $version = '3.0.0.9';
-# --------------------------------------------------------------------------- #
-$CONFIG_PATH = "res/config.conf";    # Site-wide default configuration
-# --------------------------------------------------------------------------- #
-# /// Dependencies ///                                                        
+my $version = '3.0.0.11';
 # --------------------------------------------------------------------------- #
 
-use Cwd qw(getcwd abs_path);
-use File::Basename qw(basename);
+use strict;
+use warnings;
 
-# --------------------------------------------------------------------------- #
-# /// Utility subroutines ///
-# --------------------------------------------------------------------------- #
+use Cwd qw(cwd abs_path);
+use File::Basename qw(basename dirname);
+use Getopt::Long qw(GetOptions);
+use Time::HiRes qw(time);
 
-sub read_file { # Read entire contents of a file
-  my ($path) = @_;
-  return unless (-f $path);
-  open(my $fh, '<', $path) or return;
-  my $content = do { local $/; <$fh> };
-  close($fh);
-  chomp($content) if ($content);
-  return $content;
+my $SITE_CONFIG_NAME  = "res/config.conf";
+my $LOCAL_CONFIG_NAME = ".config.conf";
+
+my %RUNTIME = (
+  mode          => undef,
+  cli_root      => undef,
+  cli_target    => undef,
+  cli_config    => undef,
+  cli_verbose   => 0,
+  help          => 0,
+  document_root => undef,
+  physical_cwd  => undef,
+  logical_cwd   => undef,
+  site_root     => undef,
+  site_config   => undef,
+  local_config  => undef,
+  debug_html    => "",
+);
+
+my %CONFIG = (
+  TITLE_FILE           => "title",
+  INTRO_FILE           => "intro.html",
+  BODY_FILE            => "body.html",
+  TOC_FILE             => "info",
+  GROUP_FILE           => "group",
+  SITE_NAME            => "",
+  ORGANIZATION         => "",
+  NAV_POSITION         => "top",
+  BREADCRUMB_SEPARATOR => " &gt; ",
+  SHOW_TOC             => 1,
+  TREE_TOC             => 1,
+  TOC_TITLE            => "",
+  TOC_SUBTITLE         => "",
+  APPEND_TOC_TO_BODY   => 1,
+  HOME_PAGE_TITLE      => "Home",
+  FOOTER_NAV           => 1,
+  API_ENABLED          => 1,
+  DEBUG_TRACE          => 0,
+  FAVICON              => "/res/sys/favicon.ico",
+  SITE_STYLE_DIRECTORY => "/res/style",
+  MAIN_STYLESHEET      => undef,
+  LEGACY_STYLESHEET    => undef,
+  HTML_DOCTYPE         => 'HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd"',
+  PAGE_TITLE           => "",
+  PAGE_SUBTITLE        => "",
+  PAGE_INTRO           => "",
+  PAGE_META_DESCRIPTION => "",
+  PAGE_META_KEYWORDS    => "",
+);
+
+$CONFIG{MAIN_STYLESHEET}   = "$CONFIG{SITE_STYLE_DIRECTORY}/style.css";
+$CONFIG{LEGACY_STYLESHEET} = "$CONFIG{SITE_STYLE_DIRECTORY}/legacy.css";
+
+my $MAIN_STYLESHEET_EXPLICIT   = 0;
+my $LEGACY_STYLESHEET_EXPLICIT = 0;
+
+sub detect_runtime_mode {
+  return "cgi" if ($ENV{GATEWAY_INTERFACE} || $ENV{REQUEST_METHOD});
+  return "cli";
 }
 
-sub read_file_lines { # Read a range of file lines
-  my ($path, $from, $to) = @_;
-  return unless (-f $path);
-  open(my $fh, '<', $path) or return;
-  my @lines;
-  my $n = 0;
-  while (my $line = <$fh>) {
-    $n++;
-    next if ($n < $from);
-    last if ($n > $to);
-    chomp($line);
-    push @lines, $line;
-  }
-  close($fh);
-  return wantarray ? @lines : join("\n", @lines);
+sub usage_text {
+  return <<"USAGE";
+Usage: perl v3/index.cgi [options]
+
+Options:
+  --help         Show this help message
+  --verbose      Enable debug tracing
+  --root=PATH    Set DOCUMENT_ROOT
+  --target=PATH  Validate and store a target directory for later feature use
+  --config=FILE  Use an explicit site config file
+USAGE
 }
 
-sub read_file_line { # Read a specific file line
-  my ($path, $line_num) = @_;
-  return read_file_lines($path, $line_num, $line_num);
-}
-
-# --------------------------------------------------------------------------- #
-# /// Input mode handling ///
-# --------------------------------------------------------------------------- #
-
-sub content_header { # Generate CGI response header for a given content type
-  my ($type) = @_;
-  $type //= "text/html";
-  return "Content-type: ${type}\n\n";
-}
-
-sub config_enabled { # Interpret common boolean config strings
+sub config_enabled {
   my ($value) = @_;
   return 0 unless defined($value);
   return 0 if ($value =~ /^(?:0|false|no|off)$/i);
@@ -64,172 +93,441 @@ sub config_enabled { # Interpret common boolean config strings
   return $value ? 1 : 0;
 }
 
-sub resolve_local_path { # Resolve site-relative asset path to a local file
-  my ($path) = @_;
-  return unless ($path);
-
-  if ($path =~ m{^/}) {
-    my $doc_root = $ENV{DOCUMENT_ROOT};
-    return "${doc_root}${path}" if ($doc_root && -f "${doc_root}${path}");
-
-    my $search_dir = Cwd::getcwd();
-    while ($search_dir) {
-      my $candidate = "${search_dir}${path}";
-      return $candidate if (-f $candidate);
-      last if ($search_dir eq "/");
-      $search_dir =~ s{/[^/]+$}{};
-      $search_dir = "/" if ($search_dir eq "");
-    }
-    return;
-  }
-
-  my $candidate = Cwd::getcwd() . "/" . $path;
-  return $candidate if (-f $candidate);
-  return;
+sub debug_enabled {
+  return 1 if ($RUNTIME{cli_verbose});
+  return config_enabled($CONFIG{DEBUG_TRACE});
 }
 
-# --------------------------------------------------------------------------- #
-# /// Configuration loading ///
-# --------------------------------------------------------------------------- #
+sub debug_line {
+  my ($phase, $message) = @_;
+  return unless (debug_enabled());
+  return unless (defined($message) && $message ne "");
+  $phase //= "general";
+  my $line = "[" . sprintf("%.6f", time()) . "] [$phase] $message\n";
 
-sub get_config_value { # Load key from config file
-  my ($key) = @_;
-  return unless ($key && -f $CONFIG_PATH);
-  open(my $fh, '<', $CONFIG_PATH) or return;
-  while (my $line = <$fh>) {
-    chomp($line);
-    $line =~ s/^\s+|\s+$//g;
-    next if ($line =~ /^#/ || $line eq "");
-    if ($line =~ /^(\w+)\s*=\s*(.*)$/) {
-      my ($k, $v) = ($1, $2);
-      $v =~ s/\s+$//;
-      if ($k eq $key) {
-        close($fh);
-        return $v;
-      }
+  if ($RUNTIME{mode} eq "cli") {
+    print STDERR $line;
+  } else {
+    $line =~ s/--/- -/g;
+    $RUNTIME{debug_html} .= $line;
+  }
+}
+
+sub debug_comment_block {
+  return "" unless ($RUNTIME{mode} eq "cgi");
+  return "" unless ($RUNTIME{debug_html});
+  return "<!--\n$RUNTIME{debug_html}-->\n";
+}
+
+sub html_escape {
+  my ($text) = @_;
+  $text //= "";
+  $text =~ s/&/&amp;/g;
+  $text =~ s/</&lt;/g;
+  $text =~ s/>/&gt;/g;
+  $text =~ s/"/&quot;/g;
+  return $text;
+}
+
+sub emit_error {
+  my ($message) = @_;
+  $message //= "Unknown error";
+
+  if ($RUNTIME{mode} eq "cgi") {
+    my $safe = html_escape($message);
+    print "Content-type: text/html\n\n";
+    print "<!DOCTYPE html>\n";
+    print "<html><head><title>NSI Error</title></head><body>\n";
+    print "<h1>NSI Error</h1>\n";
+    print "<pre>${safe}</pre>\n";
+    print "</body></html>\n";
+  } else {
+    print STDERR "NSI error: ${message}\n";
+  }
+  exit 1;
+}
+
+sub normalize_path {
+  my ($path) = @_;
+  return unless defined($path) && $path ne "";
+  $path =~ s{//+}{/}g;
+  $path =~ s{/$}{} unless ($path eq "/");
+  return $path || "/";
+}
+
+sub path_is_within {
+  my ($path, $base) = @_;
+  return 0 unless ($path && $base);
+  $path = normalize_path($path);
+  $base = normalize_path($base);
+  return 1 if ($path eq $base);
+  return ($path =~ /^\Q$base\E\//) ? 1 : 0;
+}
+
+sub read_text_file {
+  my ($path) = @_;
+  return unless ($path && -e $path);
+  emit_error("File exists but is not readable: $path") unless (-r $path);
+  open(my $fh, '<', $path) or emit_error("Failed to read file $path: $!");
+  local $/;
+  my $content = <$fh>;
+  close($fh);
+  return $content;
+}
+
+sub read_text_file_line {
+  my ($path, $line_number) = @_;
+  return unless ($path && -e $path);
+  emit_error("File exists but is not readable: $path") unless (-r $path);
+  open(my $fh, '<', $path) or emit_error("Failed to read file $path: $!");
+  my $current = 0;
+  my $line;
+  while (my $candidate = <$fh>) {
+    $current++;
+    if ($current == $line_number) {
+      $line = $candidate;
+      last;
     }
   }
   close($fh);
-  return;
+  chomp($line) if defined($line);
+  return $line;
 }
 
-sub read_config { # Set defaults and override with config values
-  # Content file conventions (internal, not user-configurable)
-  $TITLE_FILE = "title";
-  $INTRO_FILE = "intro.html";
-  $BODY_FILE  = "body.html";
-  $TOC_FILE   = "info";
+sub parse_cli_options {
+  local @ARGV = @ARGV;
+  Getopt::Long::Configure("no_auto_abbrev", "no_ignore_case");
+  my $ok = GetOptions(
+    "help"     => \$RUNTIME{help},
+    "verbose"  => \$RUNTIME{cli_verbose},
+    "root=s"   => \$RUNTIME{cli_root},
+    "target=s" => \$RUNTIME{cli_target},
+    "config=s" => \$RUNTIME{cli_config},
+  );
+  emit_error("Error in command line arguments. Use --help for usage.")
+    unless ($ok);
+}
 
-  # Display defaults
-  $SITE_NAME        = "";
-  $ORGANIZATION     = "";
-  $NAV_POSITION     = "top";
-  $BREADCRUMB_SEPARATOR = " &gt; ";
-  $SHOW_TOC         = 1;
-  $TREE_TOC         = 1;
-  $TOC_TITLE        = "";
-  $TOC_SUBTITLE     = "";
-  $APPEND_TOC_TO_BODY = 1;
-  $HOME_PAGE_TITLE = "Home";
-  $FOOTER_NAV      = 1;
-  $API_ENABLED     = 1;
-  $DEBUG_TRACE     = 0;
-  $FAVICON         = "/res/sys/favicon.ico";
-  $SITE_STYLE_DIRECTORY = "/res/style";
-  $MAIN_STYLESHEET = "${SITE_STYLE_DIRECTORY}/style.css";
-  $LEGACY_STYLESHEET = "${SITE_STYLE_DIRECTORY}/legacy.css";
-  $HTML_DOCTYPE    = 'HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd"';
+sub validate_cli_paths {
+  if (defined($RUNTIME{cli_root})) {
+    emit_error("--root path does not exist: $RUNTIME{cli_root}")
+      unless (-e $RUNTIME{cli_root});
+    emit_error("--root path is not a directory: $RUNTIME{cli_root}")
+      unless (-d $RUNTIME{cli_root});
+    my $root = abs_path($RUNTIME{cli_root});
+    emit_error("Unable to resolve --root path: $RUNTIME{cli_root}") unless ($root);
+    $RUNTIME{cli_root} = normalize_path($root);
+  }
 
-  # Output accumulators
-  $CONTENT  = "";
-  $METADATA = "";
+  if (defined($RUNTIME{cli_target})) {
+    emit_error("--target path does not exist: $RUNTIME{cli_target}")
+      unless (-e $RUNTIME{cli_target});
+    emit_error("--target path is not a directory: $RUNTIME{cli_target}")
+      unless (-d $RUNTIME{cli_target});
+    my $target = abs_path($RUNTIME{cli_target});
+    emit_error("Unable to resolve --target path: $RUNTIME{cli_target}") unless ($target);
+    $RUNTIME{cli_target} = normalize_path($target);
+  }
 
-  # Override from config file
-  my $v;
-  $SITE_NAME        = $v if ($v = get_config_value("site_name"));
-  $ORGANIZATION     = $v if ($v = get_config_value("organization"));
-  $NAV_POSITION     = $v if ($v = get_config_value("nav_position"));
-  $BREADCRUMB_SEPARATOR = $v if ($v = get_config_value("breadcrumb_separator"));
-  $SHOW_TOC         = $v if defined($v = get_config_value("show_toc"));
-  $TREE_TOC         = $v if defined($v = get_config_value("tree_toc"));
-  $TOC_TITLE        = $v if ($v = get_config_value("toc_title"));
-  $TOC_SUBTITLE     = $v if ($v = get_config_value("toc_subtitle"));
-  $APPEND_TOC_TO_BODY = $v if defined($v = get_config_value("append_toc_to_body"));
-  $HOME_PAGE_TITLE = $v if ($v = get_config_value("home_page_title"));
-  $FOOTER_NAV      = $v if ($v = get_config_value("footer_nav"));
-  $API_ENABLED     = $v if defined($v = get_config_value("api_enabled"));
-  $DEBUG_TRACE     = $v if defined($v = get_config_value("debug_trace"));
-  $FAVICON         = $v if ($v = get_config_value("favicon"));
-  $MAIN_STYLESHEET = $v if ($v = get_config_value("main_stylesheet"));
-  $LEGACY_STYLESHEET = $v if ($v = get_config_value("legacy_stylesheet"));
-  $SITE_STYLE_DIRECTORY = $v if ($v = get_config_value("site_style_directory"));
-
-  # Per-page overrides (only set if present in config)
-  $PAGE_TITLE            = $v if ($v = get_config_value("page_title"));
-  $PAGE_SUBTITLE         = $v if ($v = get_config_value("page_subtitle"));
-  $PAGE_INTRO            = $v if ($v = get_config_value("page_intro"));
-  $PAGE_META_DESCRIPTION = $v if ($v = get_config_value("page_meta_description"));
-  $PAGE_META_KEYWORDS    = $v if ($v = get_config_value("page_meta_keywords"));
-
-  if ($SITE_STYLE_DIRECTORY) {
-    $MAIN_STYLESHEET   = "${SITE_STYLE_DIRECTORY}/style.css"
-      unless (get_config_value("main_stylesheet"));
-    $LEGACY_STYLESHEET = "${SITE_STYLE_DIRECTORY}/legacy.css"
-      unless (get_config_value("legacy_stylesheet"));
+  if (defined($RUNTIME{cli_config})) {
+    emit_error("--config file does not exist: $RUNTIME{cli_config}")
+      unless (-e $RUNTIME{cli_config});
+    emit_error("--config path is not a file: $RUNTIME{cli_config}")
+      unless (-f $RUNTIME{cli_config});
+    emit_error("--config file is not readable: $RUNTIME{cli_config}")
+      unless (-r $RUNTIME{cli_config});
+    my $config = abs_path($RUNTIME{cli_config});
+    emit_error("Unable to resolve --config path: $RUNTIME{cli_config}") unless ($config);
+    $RUNTIME{cli_config} = normalize_path($config);
   }
 }
 
-read_config();
+sub get_cgi_logical_dir {
+  emit_error("CGI mode requires DOCUMENT_ROOT to be set")
+    unless ($ENV{DOCUMENT_ROOT});
+  emit_error("CGI mode requires SCRIPT_NAME to be set")
+    unless ($ENV{SCRIPT_NAME});
 
-# --------------------------------------------------------------------------- #
-# /// API handler ///
-# --------------------------------------------------------------------------- #
+  my $doc_root = normalize_path(abs_path($ENV{DOCUMENT_ROOT}) || $ENV{DOCUMENT_ROOT});
+  my $script_name = $ENV{SCRIPT_NAME};
+  my $script_dir = $script_name;
+  $script_dir =~ s{/[^/]*$}{};
+  $script_dir = "/" if ($script_dir eq "");
 
-# TODO: Reimplement simple API logic from v2
+  return (
+    normalize_path($doc_root . $script_dir),
+    $doc_root,
+  );
+}
 
-# --------------------------------------------------------------------------- #
-# /// Client detection ///
-# --------------------------------------------------------------------------- #
+sub discover_site_config {
+  my ($start_dir, $stop_dir) = @_;
+  my $dir = normalize_path($start_dir);
+  $stop_dir = normalize_path($stop_dir) if ($stop_dir);
 
-# TODO: Reimplement client detection tiering from v2
+  while ($dir) {
+    my $candidate = "${dir}/${SITE_CONFIG_NAME}";
+    debug_line("config discovery", "Checking $candidate");
+    return ($candidate, $dir) if (-f $candidate);
 
-# --------------------------------------------------------------------------- #
-# /// Subelement assembly ///
-# Build content subelements from filesystem and configuration
-# --------------------------------------------------------------------------- #
+    last if ($dir eq "/");
+    last if ($stop_dir && $dir eq $stop_dir);
+    $dir = normalize_path(dirname($dir));
+  }
 
-sub get_navigation() { # Get page navigation data
-  my $current_dir = Cwd::getcwd();
-  my $doc_root = $ENV{DOCUMENT_ROOT} // "";
-  return unless ($doc_root);
-  $current_dir =~ s/\/$//;
-  $doc_root    =~ s/\/$//;
-  return unless ($current_dir =~ /^\Q$doc_root\E(?:\/|$)/);
-  return if ($current_dir eq $doc_root);
+  return;
+}
+
+sub config_root_from_file {
+  my ($path) = @_;
+  return unless ($path);
+  my $dir = normalize_path(dirname($path));
+  return normalize_path(dirname($dir)) if (basename($dir) eq "res");
+  return $dir;
+}
+
+sub load_config_file {
+  my ($path, $scope) = @_;
+  return unless ($path);
+  emit_error("Configuration file is not readable: $path") unless (-r $path);
+
+  debug_line("config discovery/load", "Loading ${scope} config $path");
+
+  open(my $fh, '<', $path) or emit_error("Failed to open config $path: $!");
+  my $line_number = 0;
+  while (my $line = <$fh>) {
+    $line_number++;
+    chomp($line);
+    next if ($line =~ /^\s*$/);
+    next if ($line =~ /^\s*#/);
+
+    unless ($line =~ /^\s*([A-Za-z_]\w*)\s*=\s*(.*?)\s*$/) {
+      close($fh);
+      emit_error("Malformed config line in $path at line $line_number: $line");
+    }
+
+    my ($key, $value) = ($1, $2);
+    $value =~ s/^\s+//;
+    $value =~ s/\s+$//;
+    $value =~ s/^"(.*)"$/$1/;
+    $value =~ s/^'(.*)'$/$1/;
+
+    if ($key eq "site_name") {
+      $CONFIG{SITE_NAME} = $value;
+    } elsif ($key eq "organization") {
+      $CONFIG{ORGANIZATION} = $value;
+    } elsif ($key eq "nav_position") {
+      $CONFIG{NAV_POSITION} = $value;
+    } elsif ($key eq "breadcrumb_separator") {
+      $CONFIG{BREADCRUMB_SEPARATOR} = $value;
+    } elsif ($key eq "show_toc") {
+      $CONFIG{SHOW_TOC} = $value;
+    } elsif ($key eq "tree_toc") {
+      $CONFIG{TREE_TOC} = $value;
+    } elsif ($key eq "toc_title") {
+      $CONFIG{TOC_TITLE} = $value;
+    } elsif ($key eq "toc_subtitle") {
+      $CONFIG{TOC_SUBTITLE} = $value;
+    } elsif ($key eq "append_toc_to_body") {
+      $CONFIG{APPEND_TOC_TO_BODY} = $value;
+    } elsif ($key eq "home_page_title") {
+      $CONFIG{HOME_PAGE_TITLE} = $value;
+    } elsif ($key eq "footer_nav") {
+      $CONFIG{FOOTER_NAV} = $value;
+    } elsif ($key eq "api_enabled") {
+      $CONFIG{API_ENABLED} = $value;
+    } elsif ($key eq "debug_trace") {
+      $CONFIG{DEBUG_TRACE} = $value;
+    } elsif ($key eq "favicon") {
+      $CONFIG{FAVICON} = $value;
+    } elsif ($key eq "site_style_directory") {
+      $CONFIG{SITE_STYLE_DIRECTORY} = $value;
+      $CONFIG{MAIN_STYLESHEET}   = "$value/style.css"
+        unless ($MAIN_STYLESHEET_EXPLICIT);
+      $CONFIG{LEGACY_STYLESHEET} = "$value/legacy.css"
+        unless ($LEGACY_STYLESHEET_EXPLICIT);
+    } elsif ($key eq "main_stylesheet") {
+      $CONFIG{MAIN_STYLESHEET} = $value;
+      $MAIN_STYLESHEET_EXPLICIT = 1;
+    } elsif ($key eq "legacy_stylesheet") {
+      $CONFIG{LEGACY_STYLESHEET} = $value;
+      $LEGACY_STYLESHEET_EXPLICIT = 1;
+    } elsif ($key eq "page_title") {
+      $CONFIG{PAGE_TITLE} = $value;
+    } elsif ($key eq "page_subtitle") {
+      $CONFIG{PAGE_SUBTITLE} = $value;
+    } elsif ($key eq "page_intro") {
+      $CONFIG{PAGE_INTRO} = $value;
+    } elsif ($key eq "page_meta_description") {
+      $CONFIG{PAGE_META_DESCRIPTION} = $value;
+    } elsif ($key eq "page_meta_keywords") {
+      $CONFIG{PAGE_META_KEYWORDS} = $value;
+    }
+  }
+  close($fh);
+}
+
+sub resolve_runtime {
+  $RUNTIME{mode} = detect_runtime_mode();
+  parse_cli_options() if ($RUNTIME{mode} eq "cli");
+
+  if ($RUNTIME{help}) {
+    print usage_text();
+    exit 0;
+  }
+
+  validate_cli_paths() if ($RUNTIME{mode} eq "cli");
+
+  $RUNTIME{physical_cwd} = normalize_path(cwd());
+  emit_error("Unable to determine current working directory")
+    unless ($RUNTIME{physical_cwd} && -d $RUNTIME{physical_cwd});
+
+  debug_line("runtime detection", "Mode: $RUNTIME{mode}");
+  debug_line("runtime detection", "Physical cwd: $RUNTIME{physical_cwd}");
+
+  if ($RUNTIME{mode} eq "cgi") {
+    my ($logical_cwd, $document_root) = get_cgi_logical_dir();
+    $RUNTIME{logical_cwd}   = $logical_cwd;
+    $RUNTIME{document_root} = $document_root;
+  } else {
+    $RUNTIME{logical_cwd}   = $RUNTIME{physical_cwd};
+    $RUNTIME{document_root} = $RUNTIME{cli_root} if ($RUNTIME{cli_root});
+  }
+
+  debug_line("path resolution", "Logical cwd: $RUNTIME{logical_cwd}");
+  debug_line("path resolution", "Initial document root: " . ($RUNTIME{document_root} // "(unset)"));
+
+  if ($RUNTIME{cli_config}) {
+    $RUNTIME{site_config} = $RUNTIME{cli_config};
+    $RUNTIME{site_root}   = config_root_from_file($RUNTIME{cli_config});
+  } else {
+    my ($site_config, $site_root) = discover_site_config(
+      $RUNTIME{logical_cwd},
+      $RUNTIME{document_root},
+    );
+    $RUNTIME{site_config} = $site_config;
+    $RUNTIME{site_root}   = $site_root;
+  }
+
+  emit_error("Site configuration file ($SITE_CONFIG_NAME) not found in any parent directory.")
+    unless ($RUNTIME{site_config});
+
+  $RUNTIME{document_root} //= $RUNTIME{site_root};
+  $ENV{DOCUMENT_ROOT} = $RUNTIME{document_root} if ($RUNTIME{document_root});
+
+  emit_error("Unable to resolve DOCUMENT_ROOT in CLI mode")
+    if ($RUNTIME{mode} eq "cli" && !$RUNTIME{document_root});
+
+  emit_error("Current directory is outside DOCUMENT_ROOT: $RUNTIME{logical_cwd} (DOCUMENT_ROOT: $RUNTIME{document_root})")
+    unless (path_is_within($RUNTIME{logical_cwd}, $RUNTIME{document_root}));
+
+  emit_error("Logical current directory is not a directory: $RUNTIME{logical_cwd}")
+    unless (-d $RUNTIME{logical_cwd});
+
+  debug_line("config discovery/load", "Resolved site config: $RUNTIME{site_config}");
+  debug_line("path resolution", "Resolved document root: $RUNTIME{document_root}");
+
+  load_config_file($RUNTIME{site_config}, "site");
+
+  $RUNTIME{local_config} = normalize_path("$RUNTIME{logical_cwd}/${LOCAL_CONFIG_NAME}");
+  if (-e $RUNTIME{local_config}) {
+    emit_error("Local config path is not a file: $RUNTIME{local_config}")
+      unless (-f $RUNTIME{local_config});
+    load_config_file($RUNTIME{local_config}, "local override");
+  } else {
+    $RUNTIME{local_config} = undef;
+  }
+
+  if ($RUNTIME{cli_verbose}) {
+    $CONFIG{DEBUG_TRACE} = 1;
+  }
+
+  debug_line("config discovery/load", "Local override: " . ($RUNTIME{local_config} // "(none)"));
+  debug_line("runtime detection", "Target: " . ($RUNTIME{cli_target} // "(unset)"));
+}
+
+sub hook_post_config {
+  debug_line("post-config", "Post-config hook stub reached");
+}
+
+sub hook_pre_render_body {
+  debug_line("pre-render body", "Pre-render body hook stub reached");
+}
+
+sub hook_pre_output {
+  debug_line("pre-output", "Pre-output hook stub reached");
+}
+
+sub content_file_path {
+  my ($dir, $name) = @_;
+  return normalize_path("${dir}/${name}");
+}
+
+sub read_content_file {
+  my ($dir, $name) = @_;
+  return read_text_file(content_file_path($dir, $name));
+}
+
+sub read_content_file_line {
+  my ($dir, $name, $line) = @_;
+  return read_text_file_line(content_file_path($dir, $name), $line);
+}
+
+sub current_directory_url {
+  my $path = normalize_path($RUNTIME{logical_cwd});
+  my $root = normalize_path($RUNTIME{document_root});
+  return "/" if ($path eq $root);
+  my $url = $path;
+  $url =~ s/^\Q$root\E//;
+  $url = "/" if (!$url);
+  return $url;
+}
+
+sub url_for_dir {
+  my ($dir) = @_;
+  $dir = normalize_path($dir);
+  my $root = normalize_path($RUNTIME{document_root});
+  return "/" if ($dir eq $root);
+  my $url = $dir;
+  $url =~ s/^\Q$root\E//;
+  $url = "/" if (!$url);
+  return $url;
+}
+
+sub title_for_dir {
+  my ($dir, $fallback) = @_;
+  return $fallback unless ($dir && -d $dir);
+  return read_content_file_line($dir, $CONFIG{TITLE_FILE}, 1)
+    || read_content_file_line($dir, $CONFIG{TOC_FILE}, 1)
+    || basename($dir)
+    || $fallback;
+}
+
+sub page_is_root {
+  return normalize_path($RUNTIME{logical_cwd}) eq normalize_path($RUNTIME{document_root});
+}
+
+sub get_navigation {
+  return if (page_is_root());
 
   my @breadcrumbs = ({
-    label => $HOME_PAGE_TITLE // "Home",
-    href => "/",
+    label   => $CONFIG{HOME_PAGE_TITLE},
+    href    => "/",
     current => 0,
   });
 
-  my $relative_path = $current_dir;
-  $relative_path =~ s/^\Q$doc_root\E\/?//;
-  my @segments = split(/\//, $relative_path);
+  my $root = normalize_path($RUNTIME{document_root});
+  my $current = normalize_path($RUNTIME{logical_cwd});
+  my $relative = $current;
+  $relative =~ s/^\Q$root\E\/?//;
+  my @segments = grep { $_ ne "" } split(/\//, $relative);
 
-  my $cumulative_path = $doc_root;
+  my $cursor = $root;
   for (my $i = 0; $i < @segments; $i++) {
-    my $segment = $segments[$i];
-    next unless ($segment);
-    $cumulative_path .= "/$segment";
-
-    my $href = $cumulative_path;
-    $href =~ s/^\Q$doc_root\E//;
-    $href = "/" if ($href eq "");
-
+    $cursor = normalize_path("${cursor}/$segments[$i]");
     push @breadcrumbs, {
-      label => get_title_for_path($cumulative_path, $segment),
-      href => $href,
+      label   => title_for_dir($cursor, $segments[$i]),
+      href    => url_for_dir($cursor),
       current => ($i == $#segments) ? 1 : 0,
     };
   }
@@ -237,151 +535,155 @@ sub get_navigation() { # Get page navigation data
   return @breadcrumbs;
 }
 
-sub meditate() { # Get a random "meditation" image path
+sub get_footer_nav {
+  return unless (config_enabled($CONFIG{FOOTER_NAV}));
+
+  my @nav = ({ label => "Back to top", href => "#content" });
+  return @nav if (page_is_root());
+
+  my $current = normalize_path($RUNTIME{logical_cwd});
+  my $parent  = normalize_path(dirname($current));
+  my $root    = normalize_path($RUNTIME{document_root});
+
+  if ($parent ne $root) {
+    push @nav, {
+      label => title_for_dir($parent, ".."),
+      href  => "..",
+    };
+  }
+
+  push @nav, {
+    label => $CONFIG{HOME_PAGE_TITLE},
+    href  => "/",
+  };
+
+  return @nav;
+}
+
+sub get_title {
+  return $CONFIG{PAGE_TITLE} if ($CONFIG{PAGE_TITLE});
+
+  my $title = read_content_file_line($RUNTIME{logical_cwd}, $CONFIG{TITLE_FILE}, 1)
+    || read_content_file_line($RUNTIME{logical_cwd}, $CONFIG{TOC_FILE}, 1);
+  return $title if ($title);
+
+  return $CONFIG{HOME_PAGE_TITLE} if (page_is_root());
+  return $CONFIG{SITE_NAME} if ($CONFIG{SITE_NAME});
   return;
 }
 
-sub get_title() { # Get page display title from configuration or content
-  return $PAGE_TITLE if ($PAGE_TITLE);
-  return read_file_line($TITLE_FILE, 1) || read_file_line($TOC_FILE, 1);
+sub get_subtitle {
+  return $CONFIG{PAGE_SUBTITLE} if ($CONFIG{PAGE_SUBTITLE});
+  return read_content_file_line($RUNTIME{logical_cwd}, $CONFIG{TITLE_FILE}, 2);
 }
 
-sub get_subtitle() { # Get page subtitle from configuration or content
-  return $PAGE_SUBTITLE if ($PAGE_SUBTITLE);
-  return read_file_line($TITLE_FILE, 2);
-  # We don't reference TOC_FILE here because an external subtitle
-  # isn't necessarily suitable for the page itself, use a title file instead
+sub get_intro {
+  return $CONFIG{PAGE_INTRO} if ($CONFIG{PAGE_INTRO});
+  return read_content_file($RUNTIME{logical_cwd}, $CONFIG{INTRO_FILE});
 }
 
-sub get_intro() { # Get page intro from configuration or content
-  return $PAGE_INTRO if ($PAGE_INTRO);
-  return read_file($INTRO_FILE);
-}
+sub get_body {
+  my @chunks;
 
-sub get_body() { # Assemble body from content
-  my @body_chunks;
-  # Get a static body file if it exists
-  if (-f $BODY_FILE) {
-    my $body_file = read_file($BODY_FILE);
-    push @body_chunks, $body_file if defined($body_file) && $body_file ne "";
-  }
-  # Body fragment directory
-  if (-d "body") {
-    unless (opendir(my $dh, "body")) {
-      return join("\n", @body_chunks) if (@body_chunks);
-      return;
-    }
-    my @fragments = sort grep { -f "body/$_" && $_ !~ /^\./ } readdir($dh);
+  my $body_html = read_content_file($RUNTIME{logical_cwd}, $CONFIG{BODY_FILE});
+  push @chunks, $body_html if (defined($body_html) && $body_html ne "");
+
+  my $body_dir = content_file_path($RUNTIME{logical_cwd}, "body");
+  if (-d $body_dir) {
+    opendir(my $dh, $body_dir)
+      or emit_error("Failed to read body fragment directory $body_dir: $!");
+    my @fragments = sort grep { $_ !~ /^\./ && -f "${body_dir}/$_" } readdir($dh);
     closedir($dh);
+
     foreach my $fragment (@fragments) {
-      my $fragment_content = read_file("body/$fragment");
-      push @body_chunks, $fragment_content
-        if defined($fragment_content) && $fragment_content ne "";
+      my $content = read_text_file("${body_dir}/${fragment}");
+      push @chunks, $content if (defined($content) && $content ne "");
     }
   }
-  return join("\n", @body_chunks) if (@body_chunks);
-  return;
+
+  return unless (@chunks);
+  return join("\n", @chunks);
 }
 
-sub get_toc_entry { # Get TOC entry data for a directory
+sub get_toc_entry {
   my ($dir_path) = @_;
   return unless ($dir_path && -d $dir_path);
-  my $info_path = "${dir_path}/${TOC_FILE}";
+
+  my $info_path = content_file_path($dir_path, $CONFIG{TOC_FILE});
   return unless (-f $info_path);
 
-  my $title = read_file_line($info_path, 1);
-  return unless defined($title) && $title ne "";
+  my $title = read_text_file_line($info_path, 1);
+  return unless ($title);
 
-  my $description = read_file($info_path);
+  my $description = read_text_file($info_path);
   if (defined($description)) {
     my @parts = split(/\n/, $description, 2);
     $description = $parts[1] // "";
-    $description =~ s/^\s+|\s+$//g;
+    $description =~ s/^\s+//;
+    $description =~ s/\s+$//;
   }
 
-  my $path = $dir_path;
-  $path =~ s#^\./##;
-  $path .= "/" unless ($path =~ /\/$/);
-
   return {
-    title => $title,
-    path => $path,
+    title       => $title,
+    path        => url_for_dir($dir_path) . "/",
     description => $description,
-    fs_path => $dir_path,
+    is_group    => (-f content_file_path($dir_path, $CONFIG{GROUP_FILE})) ? 1 : 0,
+    fs_path     => $dir_path,
   };
 }
 
-sub get_toc { # Get table of contents data
-  return unless (config_enabled($SHOW_TOC));
-  return unless (config_enabled($TREE_TOC));
-  my $dh;
-  unless (opendir($dh, ".")) {
-    return;
-  }
+sub get_toc {
+  return unless (config_enabled($CONFIG{SHOW_TOC}));
+  return unless (config_enabled($CONFIG{TREE_TOC}));
+
+  opendir(my $dh, $RUNTIME{logical_cwd})
+    or emit_error("Failed to read content directory $RUNTIME{logical_cwd}: $!");
 
   my @entries;
   foreach my $item (readdir($dh)) {
     next if ($item =~ /^\.\.?$/);
-    next unless (-d $item);
-    my $entry = get_toc_entry($item);
+    my $path = content_file_path($RUNTIME{logical_cwd}, $item);
+    next unless (-d $path);
+    my $entry = get_toc_entry($path);
     push @entries, $entry if ($entry);
   }
   closedir($dh);
 
-  @entries = sort {
-    lc($a->{title}) cmp lc($b->{title})
-  } @entries;
+  @entries = sort { lc($a->{title}) cmp lc($b->{title}) } @entries;
   return @entries;
 }
 
-sub get_title_for_path { # Get title for an arbitrary directory path
-  my ($dir_path, $fallback) = @_;
-  $fallback //= "";
-  return $fallback unless ($dir_path);
-  $dir_path =~ s/\/$//;
-  # Title file, then TOC file, then directory basename
-  return read_file_line("${dir_path}/${TITLE_FILE}", 1)
-      || read_file_line("${dir_path}/${TOC_FILE}", 1)
-      || basename($dir_path)
-      || $fallback;
-}
+sub resolve_local_path {
+  my ($path) = @_;
+  return unless ($path);
 
-sub get_footer_nav { # Get footer navigation links as raw data
-  my @nav;
-  my $current_dir = Cwd::getcwd();
-  my $doc_root = $ENV{DOCUMENT_ROOT} // "";
-  $current_dir =~ s/\/$//;
-  $doc_root    =~ s/\/$//;
-  my $at_root = ($current_dir eq $doc_root);
-  # Back to top is always present
-  push @nav, { label => "Back to top", href => "#content" };
-  # Parent link if not at root and parent isn't root
-  if (!$at_root && Cwd::abs_path("..") ne Cwd::abs_path($doc_root)) {
-    push @nav, { label => get_title_for_path("..", ".."), href => ".." };
+  if ($path =~ m{^/}) {
+    my $candidate = normalize_path(($RUNTIME{document_root} || "") . $path);
+    return $candidate if ($candidate && -f $candidate);
   }
-  # Home link if not at root
-  if (!$at_root) {
-    push @nav, { label => $HOME_PAGE_TITLE // "Home", href => "/" };
+
+  my @search = grep { defined($_) && $_ ne "" } (
+    $RUNTIME{logical_cwd},
+    $RUNTIME{site_root},
+    $RUNTIME{document_root},
+  );
+
+  foreach my $base (@search) {
+    my $candidate = normalize_path("${base}/${path}");
+    return $candidate if ($candidate && -f $candidate);
   }
-  return @nav;
+
+  return;
 }
 
-sub get_footer() { # Assemble footer from configuration
-  my @footer;
-  push @footer, scalar localtime();
-  return @footer;
-}
-
-# HTML heading assembly #######################################################
-
-sub navigation_position() { # Normalize navigation position setting
-  my $position = lc($NAV_POSITION // "top");
+sub navigation_position {
+  my $position = lc($CONFIG{NAV_POSITION} // "top");
   return "none" if ($position eq "none" || $position eq "0");
   return "bottom" if ($position eq "bottom" || $position eq "-1");
   return "top";
 }
 
-sub html_navigation { # Generate page navigation element
+sub html_navigation {
   my ($position) = @_;
   $position //= "top";
   return unless (navigation_position() eq $position);
@@ -396,65 +698,72 @@ sub html_navigation { # Generate page navigation element
     push @items, "<SPAN CLASS=\"breadcrumb_item\">${item}</SPAN>";
   }
 
-  my $separator = $BREADCRUMB_SEPARATOR // " &gt; ";
-  my $navigation = join($separator, @items);
+  my $navigation = join($CONFIG{BREADCRUMB_SEPARATOR}, @items);
   return "<DIV ID=\"navigation\" CLASS=\"no_print\">\n${navigation}\n</DIV>\n";
 }
 
-sub html_meditate() { # HTML wrapper for meditation
-  my $meditation;
-  $meditation = "<IMG ID=\"meditation\" SRC=\"" . $meditation . "\">"
-    if ($meditation = meditate());
-  return($meditation);
+sub html_title {
+  my $title = get_title();
+  return unless ($title);
+  return "<H1 ID=\"title\"><B>${title}</B></H1>\n";
 }
 
-sub html_title() { # HTML wrapper for title
-  my $title;
-  $title = "<H1 ID=\"title\"><B>" . $title . "</B></H1>" if ($title = get_title());
-  return($title);
+sub html_subtitle {
+  my $subtitle = get_subtitle();
+  return unless ($subtitle);
+  return "<H2 ID=\"subtitle\">${subtitle}</H2>\n";
 }
 
-sub html_subtitle() { # HTML wrapper for subtitle
-  my $subtitle;
-  return($subtitle);
+sub html_intro {
+  my $intro = get_intro();
+  return unless ($intro);
+  return "<DIV ID=\"intro\">\n${intro}\n</DIV>\n";
 }
 
-sub html_intro() { # HTML wrapper for intro
-  my $intro;
-  $intro = "<DIV ID=\"intro\">\n" . $intro . "\n</DIV>" if ($intro = get_intro());
-  return($intro);
+sub html_heading {
+  my $heading = "";
+  $heading .= html_navigation("top") || "";
+  $heading .= html_title() || "";
+  $heading .= html_subtitle() || "";
+  $heading .= html_intro() || "";
+  return $heading || undef;
 }
 
-sub html_heading() { # Generate HTML header/title element
-  my $heading, $medtitation, $title, $intro, $navigation;
-  $heading .= $navigation if ($navigation = html_navigation("top"));
-  $heading .= $meditation if ($meditation = html_meditate());
-  $heading .= $title if ($title = html_title());
-  $heading .= $subtitle if ($subtitle = html_subtitle());
-  $heading .= $intro if ($intro = html_intro());
-  return($heading);
-}
+sub html_toc {
+  my @entries = get_toc();
+  return unless (@entries);
 
-# HTML body assembly ##########################################################
-
-sub html_body() { # HTML wrapper for body content
-  my $body = get_body();
-  my $toc = html_toc();
-  my @main_sections;
-
-  push @main_sections, $body if ($body);
-  if ($toc && (!$body || config_enabled($APPEND_TOC_TO_BODY))) {
-    push @main_sections, $toc;
+  my @items;
+  foreach my $entry (@entries) {
+    my $item = "<A HREF=\"$entry->{path}\">$entry->{title}</A>";
+    $item = "<H3>${item}</H3>";
+    $item .= "\n<P>$entry->{description}</P>" if ($entry->{description});
+    push @items, "<LI>\n${item}\n</LI>\n";
   }
 
-  return unless (@main_sections);
-  return "<DIV ID=\"body\">\n" . join("\n", @main_sections) . "\n</DIV>\n";
+  my $toc = "<UL>\n" . join("", @items) . "</UL>\n";
+  $toc = "<P>\n$CONFIG{TOC_SUBTITLE}</P>\n${toc}" if ($CONFIG{TOC_SUBTITLE});
+  $toc = "<H2>$CONFIG{TOC_TITLE}</H2>\n${toc}" if ($CONFIG{TOC_TITLE});
+  return "<DIV ID=\"contents\">\n${toc}</DIV>\n";
 }
 
-# HTML footer assembly ########################################################
+sub html_body {
+  hook_pre_render_body();
 
-sub html_footer_nav { # Generate footer navigation HTML from raw nav data
-  return unless (config_enabled($FOOTER_NAV));
+  my $body = get_body();
+  my $toc  = html_toc();
+  my @sections;
+
+  push @sections, $body if ($body);
+  if ($toc && (!$body || config_enabled($CONFIG{APPEND_TOC_TO_BODY}))) {
+    push @sections, $toc;
+  }
+
+  return unless (@sections);
+  return "<DIV ID=\"body\">\n" . join("\n", @sections) . "\n</DIV>\n";
+}
+
+sub html_footer_nav {
   my @nav = get_footer_nav();
   return unless (@nav);
   my @links = map { "<A HREF=\"$_->{href}\">$_->{label}</A>" } @nav;
@@ -462,8 +771,8 @@ sub html_footer_nav { # Generate footer navigation HTML from raw nav data
   return "<SPAN CLASS=\"footer_navigation no_print\">${nav}</SPAN>";
 }
 
-sub html_footer() {
-  my @footer = get_footer();
+sub html_footer {
+  my @footer = (scalar localtime());
   my $nav = html_footer_nav();
   push @footer, $nav if ($nav);
   @footer = grep { defined($_) && $_ ne "" } @footer;
@@ -477,54 +786,25 @@ sub html_footer() {
     push @cells, "  <TD ALIGN=\"${align}\">$footer[$i]</TD>\n";
   }
 
-  my $footer = "<TABLE WIDTH=\"100%\" CLASS=\"footer\">\n";
-  $footer .= "<TR>\n";
-  $footer .= join("", @cells);
-  $footer .= "</TR>\n";
-  $footer .= "</TABLE>\n";
-  return $footer;
+  return "<TABLE WIDTH=\"100%\" CLASS=\"footer\">\n<TR>\n"
+    . join("", @cells)
+    . "</TR>\n</TABLE>\n";
 }
 
-# HTML metadata assembly ###################################################### 
-
-sub html_toc { # HTML wrapper for table of contents
-  my @entries = get_toc();
-  return unless (@entries);
-
-  my @items;
-  foreach my $entry (@entries) {
-    my $item = "<A HREF=\"$entry->{path}\">$entry->{title}</A>";
-    $item = "<H3>${item}</H3>";
-    $item .= "\n<P>$entry->{description}</P>" if ($entry->{description});
-    push @items, "<LI>\n${item}\n</LI>\n";
-  }
-
-  my $toc = "<UL>\n" . join("", @items) . "</UL>\n";
-  $toc = "<P>\n${TOC_SUBTITLE}</P>\n${toc}" if ($TOC_SUBTITLE);
-  $toc = "<H2>${TOC_TITLE}</H2>\n${toc}" if ($TOC_TITLE);
-  return "<DIV ID=\"contents\">\n${toc}</DIV>\n";
+sub html_doctype {
+  return "<!DOCTYPE $CONFIG{HTML_DOCTYPE}>\n";
 }
 
-sub html_doctype() { # Set HTML DOCTYPE based on client detection
-  my $doctype = $HTML_DOCTYPE // 'HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd"';
-  return "<!DOCTYPE ${doctype}>\n";
-}
+sub html_meta_title {
+  my $title = get_title() || "";
+  my $site_name = $CONFIG{SITE_NAME} || "";
 
-sub html_meta_title() { # Get page title from parsed data 
-  my $title = get_title();
-  my $site_name = $SITE_NAME;
+  $title =~ s/^\s+//;
+  $title =~ s/\s+$//;
+  $site_name =~ s/^\s+//;
+  $site_name =~ s/\s+$//;
 
-  if (defined($title)) {
-    $title =~ s/^\s+|\s+$//g;
-  }
-  if (defined($site_name)) {
-    $site_name =~ s/^\s+|\s+$//g;
-  }
-
-  if ($site_name && $title && $site_name eq $title) {
-    $title = "";
-  }
-
+  $title = "" if ($site_name && $title && $site_name eq $title);
   my $page_title = "";
   $page_title .= $site_name if ($site_name);
   $page_title .= " - " if ($site_name && $title);
@@ -533,94 +813,96 @@ sub html_meta_title() { # Get page title from parsed data
   return;
 }
 
-sub html_meta_style() { # Get page style block
+sub html_meta_style {
   my $style = "";
-  my $legacy_path = resolve_local_path($LEGACY_STYLESHEET);
-  if ($legacy_path && open(my $style_fh, '<', $legacy_path)) {
-    $style .= "<STYLE><!--\n";
-    while (my $line = <$style_fh>) {
-      $style .= $line;
+  my $legacy_path = resolve_local_path($CONFIG{LEGACY_STYLESHEET});
+  if ($legacy_path) {
+    my $legacy = read_text_file($legacy_path);
+    if (defined($legacy) && $legacy ne "") {
+      $style .= "<STYLE><!--\n${legacy}//--></STYLE>\n";
     }
-    close($style_fh);
-    $style .= "//--></STYLE>\n";
   }
-  $style .= "<LINK REL=\"stylesheet\" HREF=\"${MAIN_STYLESHEET}\">\n"
-    if ($MAIN_STYLESHEET);
+
+  $style .= "<LINK REL=\"stylesheet\" HREF=\"$CONFIG{MAIN_STYLESHEET}\">\n"
+    if ($CONFIG{MAIN_STYLESHEET});
   return $style if ($style);
   return;
 }
 
-sub html_meta_favicon() { # Get favicon if available
-  return "<LINK REL=\"icon\" TYPE=\"image/x-icon\" HREF=\"${FAVICON}\">\n" if ($FAVICON);
+sub html_meta_favicon {
+  return "<LINK REL=\"icon\" TYPE=\"image/x-icon\" HREF=\"$CONFIG{FAVICON}\">\n"
+    if ($CONFIG{FAVICON});
   return;
 }
 
-sub html_meta_description() { # Get page description from config or content
-  return "<META NAME=\"description\" CONTENT=\"${PAGE_META_DESCRIPTION}\">\n" if ($PAGE_META_DESCRIPTION);
+sub html_meta_description {
+  return "<META NAME=\"description\" CONTENT=\"$CONFIG{PAGE_META_DESCRIPTION}\">\n"
+    if ($CONFIG{PAGE_META_DESCRIPTION});
   return;
 }
 
-sub html_meta_keywords() { # Get page keywords from config or content
-  return "<META NAME=\"keywords\" CONTENT=\"${PAGE_META_KEYWORDS}\">\n" if ($PAGE_META_KEYWORDS);
+sub html_meta_keywords {
+  return "<META NAME=\"keywords\" CONTENT=\"$CONFIG{PAGE_META_KEYWORDS}\">\n"
+    if ($CONFIG{PAGE_META_KEYWORDS});
   return;
 }
 
-sub html_metadata() { # Get page metadata (<head> block)
+sub html_metadata {
   my $metadata = "";
-  $metadata .= html_meta_title();
-  $metadata .= html_meta_style();
-  $metadata .= html_meta_favicon();
-  $metadata .= html_meta_description();
-  $metadata .= html_meta_keywords();
-  $metadata .= $METADATA if ($METADATA);
+  $metadata .= html_meta_title() || "";
+  $metadata .= html_meta_style() || "";
+  $metadata .= html_meta_favicon() || "";
+  $metadata .= html_meta_description() || "";
+  $metadata .= html_meta_keywords() || "";
   return "<HEAD>\n${metadata}</HEAD>\n" if ($metadata);
   return;
 }
 
-# --------------------------------------------------------------------------- #
-# /// Subelement transformation ///
-# Transform domain-specific NSI extensions in raw input markup 
-# to standard/expanded format in sequential order per domain based on
-# contents of extension directory
-# --------------------------------------------------------------------------- #
-
-sub transform_html_header { # Transform HTML header with markup extensions
-  my $header = $_[0];
-  return $header; 
+sub transform_html_header {
+  my ($html) = @_;
+  return $html;
 }
 
-sub transform_html_body { # Transform HTML body with markup extensions
-  my $body = $_[0];
-  return $body; 
+sub transform_html_body {
+  my ($html) = @_;
+  return $html;
 }
 
-sub transform_html_footer { # Transform HTML footer with markup extensions
-  my $footer = $_[0];
-  return $footer; 
+sub transform_html_footer {
+  my ($html) = @_;
+  return $html;
 }
 
-sub html_content() { # Compose all visible HTML content (header, body, footer)
-  my $content;
-  $content .= transform_html_header(html_heading());
-  $content .= transform_html_body(html_body());
-  $content .= transform_html_header(html_navigation("bottom"));
-  $content .= transform_html_footer(html_footer());
-  $content = "<BODY>\n<DIV ID=\"content\">\n${content}</DIV>\n</BODY>\n" if ($content);
+sub html_content {
+  my $content = "";
+  $content .= transform_html_header(html_heading() || "");
+  $content .= transform_html_body(html_body() || "");
+  $content .= transform_html_header(html_navigation("bottom") || "");
+  $content .= transform_html_footer(html_footer() || "");
+  return unless ($content);
+  return "<BODY>\n<DIV ID=\"content\">\n${content}</DIV>\n</BODY>\n";
+}
+
+sub render_page {
+  debug_line("content resolution", "Current URL path: " . current_directory_url());
+  my $metadata = html_metadata() || "";
+  my $body = html_content() || "";
+
+  hook_pre_output();
+  debug_line("render/output", "Emitting HTML response");
+
+  my $content = "";
+  $content .= "Content-type: text/html\n\n" if ($RUNTIME{mode} eq "cgi");
+  $content .= html_doctype();
+  $content .= "<HTML>\n";
+  $content .= $metadata;
+  $content .= debug_comment_block();
+  $content .= $body;
+  $content .= "</HTML>\n";
   return $content;
 }
 
-# --------------------------------------------------------------------------- #
-# /// Content assembly ///
-# Assemble and emit final response to client from subelements
-# --------------------------------------------------------------------------- #
-
-$CONTENT .= content_header();
-$CONTENT .= html_doctype();
-$CONTENT .= "<HTML>\n";
-$CONTENT .= html_metadata();
-$CONTENT .= html_content();
-$CONTENT .= "</HTML>\n";
-
-# --------------------------------------------------------------------------- #
-print $CONTENT if ($CONTENT);
-# --------------------------------------------------------------------------- #
+resolve_runtime();
+hook_post_config();
+my $output = render_page();
+print $output;

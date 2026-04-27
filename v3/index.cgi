@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index ----------------------------------------------- #
-my $version = '3.0.0.13';
+my $version = '3.0.0.14';
 # --------------------------------------------------------------------------- #
 
 use strict;
@@ -702,6 +702,30 @@ sub resolve_local_path {
 # the resolved content directory and loaded configuration
 # --------------------------------------------------------------------------- #
 
+sub assemble_page {
+  my @breadcrumbs = get_navigation();
+  my @footer_nav = get_footer_nav();
+  my @toc_entries = get_toc();
+
+  return {
+    current_url       => scalar(current_directory_url()),
+    title             => scalar(get_title()),
+    subtitle          => scalar(get_subtitle()),
+    intro             => scalar(get_intro()),
+    body              => scalar(get_body()),
+    toc_entries       => \@toc_entries,
+    breadcrumbs       => \@breadcrumbs,
+    footer_nav        => \@footer_nav,
+    nav_position      => navigation_position(),
+    site_name         => $CONFIG{SITE_NAME},
+    favicon           => $CONFIG{FAVICON},
+    main_stylesheet   => $CONFIG{MAIN_STYLESHEET},
+    legacy_stylesheet => $CONFIG{LEGACY_STYLESHEET},
+    meta_description  => $CONFIG{PAGE_META_DESCRIPTION},
+    meta_keywords     => $CONFIG{PAGE_META_KEYWORDS},
+  };
+}
+
 sub navigation_position {
   my $position = defined($CONFIG{NAV_POSITION}) ? $CONFIG{NAV_POSITION} : "top";
   $position = lc($position);
@@ -711,11 +735,11 @@ sub navigation_position {
 }
 
 sub html_navigation {
-  my ($position) = @_;
+  my ($page, $position) = @_;
   $position = "top" unless defined($position) && $position ne "";
-  return unless (navigation_position() eq $position);
+  return unless ($page->{nav_position} eq $position);
 
-  my @breadcrumbs = get_navigation();
+  my @breadcrumbs = @{$page->{breadcrumbs}};
   return unless (@breadcrumbs);
 
   my @items;
@@ -730,34 +754,39 @@ sub html_navigation {
 }
 
 sub html_title {
-  my $title = get_title();
+  my ($page) = @_;
+  my $title = $page->{title};
   return unless ($title);
   return "<H1 ID=\"title\"><B>${title}</B></H1>\n";
 }
 
 sub html_subtitle {
-  my $subtitle = get_subtitle();
+  my ($page) = @_;
+  my $subtitle = $page->{subtitle};
   return unless ($subtitle);
   return "<H2 ID=\"subtitle\">${subtitle}</H2>\n";
 }
 
 sub html_intro {
-  my $intro = get_intro();
+  my ($page) = @_;
+  my $intro = $page->{intro};
   return unless ($intro);
   return "<DIV ID=\"intro\">\n${intro}\n</DIV>\n";
 }
 
 sub html_heading {
+  my ($page) = @_;
   my $heading = "";
-  $heading .= html_navigation("top") || "";
-  $heading .= html_title() || "";
-  $heading .= html_subtitle() || "";
-  $heading .= html_intro() || "";
+  $heading .= html_navigation($page, "top") || "";
+  $heading .= html_title($page) || "";
+  $heading .= html_subtitle($page) || "";
+  $heading .= html_intro($page) || "";
   return $heading || undef;
 }
 
 sub html_toc {
-  my @entries = get_toc();
+  my ($page) = @_;
+  my @entries = @{$page->{toc_entries}};
   return unless (@entries);
 
   my @items;
@@ -775,8 +804,9 @@ sub html_toc {
 }
 
 sub html_body {
-  my $body = get_body();
-  my $toc  = html_toc();
+  my ($page) = @_;
+  my $body = $page->{body};
+  my $toc  = html_toc($page);
   my @sections;
 
   push @sections, $body if ($body);
@@ -789,7 +819,8 @@ sub html_body {
 }
 
 sub html_footer_nav {
-  my @nav = get_footer_nav();
+  my ($page) = @_;
+  my @nav = @{$page->{footer_nav}};
   return unless (@nav);
   my @links = map { "<A HREF=\"$_->{href}\">$_->{label}</A>" } @nav;
   my $nav = join(" | ", @links);
@@ -797,8 +828,9 @@ sub html_footer_nav {
 }
 
 sub html_footer {
+  my ($page) = @_;
   my @footer = (scalar localtime());
-  my $nav = html_footer_nav();
+  my $nav = html_footer_nav($page);
   push @footer, $nav if ($nav);
   @footer = grep { defined($_) && $_ ne "" } @footer;
   return unless (@footer);
@@ -826,8 +858,9 @@ sub html_doctype {
 }
 
 sub html_meta_title {
-  my $title = get_title() || "";
-  my $site_name = $CONFIG{SITE_NAME} || "";
+  my ($page) = @_;
+  my $title = $page->{title} || "";
+  my $site_name = $page->{site_name} || "";
 
   $title =~ s/^\s+//;
   $title =~ s/\s+$//;
@@ -844,8 +877,9 @@ sub html_meta_title {
 }
 
 sub html_meta_style {
+  my ($page) = @_;
   my $style = "";
-  my $legacy_path = resolve_local_path($CONFIG{LEGACY_STYLESHEET});
+  my $legacy_path = resolve_local_path($page->{legacy_stylesheet});
   if ($legacy_path) {
     my $legacy = read_text_file($legacy_path);
     if (defined($legacy) && $legacy ne "") {
@@ -853,37 +887,41 @@ sub html_meta_style {
     }
   }
 
-  $style .= "<LINK REL=\"stylesheet\" HREF=\"$CONFIG{MAIN_STYLESHEET}\">\n"
-    if ($CONFIG{MAIN_STYLESHEET});
+  $style .= "<LINK REL=\"stylesheet\" HREF=\"$page->{main_stylesheet}\">\n"
+    if ($page->{main_stylesheet});
   return $style if ($style);
   return;
 }
 
 sub html_meta_favicon {
-  return "<LINK REL=\"icon\" TYPE=\"image/x-icon\" HREF=\"$CONFIG{FAVICON}\">\n"
-    if ($CONFIG{FAVICON});
+  my ($page) = @_;
+  return "<LINK REL=\"icon\" TYPE=\"image/x-icon\" HREF=\"$page->{favicon}\">\n"
+    if ($page->{favicon});
   return;
 }
 
 sub html_meta_description {
-  return "<META NAME=\"description\" CONTENT=\"$CONFIG{PAGE_META_DESCRIPTION}\">\n"
-    if ($CONFIG{PAGE_META_DESCRIPTION});
+  my ($page) = @_;
+  return "<META NAME=\"description\" CONTENT=\"$page->{meta_description}\">\n"
+    if ($page->{meta_description});
   return;
 }
 
 sub html_meta_keywords {
-  return "<META NAME=\"keywords\" CONTENT=\"$CONFIG{PAGE_META_KEYWORDS}\">\n"
-    if ($CONFIG{PAGE_META_KEYWORDS});
+  my ($page) = @_;
+  return "<META NAME=\"keywords\" CONTENT=\"$page->{meta_keywords}\">\n"
+    if ($page->{meta_keywords});
   return;
 }
 
 sub html_metadata {
+  my ($page) = @_;
   my $metadata = "";
-  $metadata .= html_meta_title() || "";
-  $metadata .= html_meta_style() || "";
-  $metadata .= html_meta_favicon() || "";
-  $metadata .= html_meta_description() || "";
-  $metadata .= html_meta_keywords() || "";
+  $metadata .= html_meta_title($page) || "";
+  $metadata .= html_meta_style($page) || "";
+  $metadata .= html_meta_favicon($page) || "";
+  $metadata .= html_meta_description($page) || "";
+  $metadata .= html_meta_keywords($page) || "";
   return "<HEAD>\n${metadata}</HEAD>\n" if ($metadata);
   return;
 }
@@ -895,19 +933,21 @@ sub html_metadata {
 # --------------------------------------------------------------------------- #
 
 sub html_content {
+  my ($page) = @_;
   my $content = "";
-  $content .= html_heading() || "";
-  $content .= html_body() || "";
-  $content .= html_navigation("bottom") || "";
-  $content .= html_footer() || "";
+  $content .= html_heading($page) || "";
+  $content .= html_body($page) || "";
+  $content .= html_navigation($page, "bottom") || "";
+  $content .= html_footer($page) || "";
   return unless ($content);
   return "<BODY>\n<DIV ID=\"content\">\n${content}</DIV>\n</BODY>\n";
 }
 
 sub render_page {
-  debug_line("content resolution", "Current URL path: " . current_directory_url());
-  my $metadata = html_metadata() || "";
-  my $body = html_content() || "";
+  my $page = assemble_page();
+  debug_line("content resolution", "Current URL path: $page->{current_url}");
+  my $metadata = html_metadata($page) || "";
+  my $body = html_content($page) || "";
   debug_line("render/output", "Emitting HTML response");
 
   my $content = "";

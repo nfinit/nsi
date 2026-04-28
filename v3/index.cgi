@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index ----------------------------------------------- #
-my $version = '3.0.0.18';
+my $version = '3.0.0.19';
 # --------------------------------------------------------------------------- #
 
 use strict;
@@ -540,6 +540,11 @@ sub read_content_file_line {
   return read_text_file_line(content_file_path($dir, $name), $line);
 }
 
+sub content_file_exists {
+  my ($dir, $name) = @_;
+  return -f content_file_path($dir, $name);
+}
+
 sub current_directory_url {
   my $path = normalize_path($RUNTIME{logical_cwd});
   my $root = normalize_path($RUNTIME{document_root});
@@ -694,6 +699,9 @@ sub get_toc_entry {
     title       => $title,
     path        => url_for_dir($dir_path) . "/",
     description => $description,
+    is_group    => content_file_exists($dir_path, $CONFIG{GROUP_FILE}),
+    group_title => scalar(read_content_file_line($dir_path, $CONFIG{GROUP_FILE}, 1)),
+    fs_path     => $dir_path,
   };
 }
 
@@ -897,7 +905,8 @@ sub html_toc {
 
   my @items;
   foreach my $entry (@entries) {
-    my $item = "<A HREF=\"$entry->{path}\">$entry->{title}</A>";
+    my $display_title = $entry->{group_title} || $entry->{title};
+    my $item = "<A HREF=\"$entry->{path}\">$display_title</A>";
     $item = "<H3>${item}</H3>";
     $item .= "\n<P>$entry->{description}</P>" if ($entry->{description});
     push @items, "<LI>\n${item}\n</LI>\n";

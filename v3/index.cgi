@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index ----------------------------------------------- #
-my $version = '3.0.0.15';
+my $version = '3.0.0.17';
 # --------------------------------------------------------------------------- #
 
 use strict;
@@ -333,6 +333,16 @@ sub load_config_file {
 
     if ($key eq "site_name") {
       $CONFIG{SITE_NAME} = $value;
+    } elsif ($key eq "title_file") {
+      $CONFIG{TITLE_FILE} = $value;
+    } elsif ($key eq "intro_file") {
+      $CONFIG{INTRO_FILE} = $value;
+    } elsif ($key eq "body_file") {
+      $CONFIG{BODY_FILE} = $value;
+    } elsif ($key eq "toc_file") {
+      $CONFIG{TOC_FILE} = $value;
+    } elsif ($key eq "group_file") {
+      $CONFIG{GROUP_FILE} = $value;
     } elsif ($key eq "organization") {
       $CONFIG{ORGANIZATION} = $value;
     } elsif ($key eq "nav_position") {
@@ -375,6 +385,8 @@ sub load_config_file {
     } elsif ($key eq "legacy_stylesheet") {
       $CONFIG{LEGACY_STYLESHEET} = $value;
       $LEGACY_STYLESHEET_EXPLICIT = 1;
+    } elsif ($key eq "html_doctype") {
+      $CONFIG{HTML_DOCTYPE} = $value;
     } elsif ($key eq "page_title") {
       $CONFIG{PAGE_TITLE} = $value;
     } elsif ($key eq "page_subtitle") {

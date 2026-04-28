@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index ----------------------------------------------- #
-my $version = '3.0.0.14';
+my $version = '3.0.0.15';
 # --------------------------------------------------------------------------- #
 
 use strict;
@@ -40,6 +40,8 @@ my %CONFIG = (
   ORGANIZATION         => "",
   NAV_POSITION         => "top",
   BREADCRUMB_SEPARATOR => " &gt; ",
+  AUTO_RULE            => 1,
+  AUTO_RULE_ELEMENTS   => "intro,body,toc,navigation,footer",
   SHOW_TOC             => 1,
   TREE_TOC             => 1,
   TOC_TITLE            => "",
@@ -337,6 +339,10 @@ sub load_config_file {
       $CONFIG{NAV_POSITION} = $value;
     } elsif ($key eq "breadcrumb_separator") {
       $CONFIG{BREADCRUMB_SEPARATOR} = $value;
+    } elsif ($key eq "auto_rule") {
+      $CONFIG{AUTO_RULE} = $value;
+    } elsif ($key eq "auto_rule_elements") {
+      $CONFIG{AUTO_RULE_ELEMENTS} = $value;
     } elsif ($key eq "show_toc") {
       $CONFIG{SHOW_TOC} = $value;
     } elsif ($key eq "tree_toc") {
@@ -717,6 +723,8 @@ sub assemble_page {
     breadcrumbs       => \@breadcrumbs,
     footer_nav        => \@footer_nav,
     nav_position      => navigation_position(),
+    auto_rule         => $CONFIG{AUTO_RULE},
+    auto_rule_elements => $CONFIG{AUTO_RULE_ELEMENTS},
     site_name         => $CONFIG{SITE_NAME},
     favicon           => $CONFIG{FAVICON},
     main_stylesheet   => $CONFIG{MAIN_STYLESHEET},
@@ -750,7 +758,8 @@ sub html_navigation {
   }
 
   my $navigation = join($CONFIG{BREADCRUMB_SEPARATOR}, @items);
-  return "<DIV ID=\"navigation\" CLASS=\"no_print\">\n${navigation}\n</DIV>\n";
+  return html_auto_rule($page, "navigation")
+    . "<DIV ID=\"navigation\" CLASS=\"no_print\">\n${navigation}\n</DIV>\n";
 }
 
 sub html_title {
@@ -771,15 +780,16 @@ sub html_intro {
   my ($page) = @_;
   my $intro = $page->{intro};
   return unless ($intro);
-  return "<DIV ID=\"intro\">\n${intro}\n</DIV>\n";
+  return html_auto_rule($page, "intro")
+    . "<DIV ID=\"intro\">\n${intro}\n</DIV>\n";
 }
 
 sub html_heading {
   my ($page) = @_;
   my $heading = "";
-  $heading .= html_navigation($page, "top") || "";
   $heading .= html_title($page) || "";
   $heading .= html_subtitle($page) || "";
+  $heading .= html_navigation($page, "top") || "";
   $heading .= html_intro($page) || "";
   return $heading || undef;
 }
@@ -800,7 +810,8 @@ sub html_toc {
   my $toc = "<UL>\n" . join("", @items) . "</UL>\n";
   $toc = "<P>\n$CONFIG{TOC_SUBTITLE}</P>\n${toc}" if ($CONFIG{TOC_SUBTITLE});
   $toc = "<H2>$CONFIG{TOC_TITLE}</H2>\n${toc}" if ($CONFIG{TOC_TITLE});
-  return "<DIV ID=\"contents\">\n${toc}</DIV>\n";
+  return html_auto_rule($page, "toc")
+    . "<DIV ID=\"contents\">\n${toc}</DIV>\n";
 }
 
 sub html_body {
@@ -809,13 +820,37 @@ sub html_body {
   my $toc  = html_toc($page);
   my @sections;
 
-  push @sections, $body if ($body);
+  push @sections, html_auto_rule($page, "body") . $body if ($body);
   if ($toc && (!$body || config_enabled($CONFIG{APPEND_TOC_TO_BODY}))) {
     push @sections, $toc;
   }
 
   return unless (@sections);
   return "<DIV ID=\"body\">\n" . join("\n", @sections) . "\n</DIV>\n";
+}
+
+sub html_auto_rule {
+  my ($page, $element) = @_;
+  return "" unless (config_enabled($page->{auto_rule}));
+  return "" unless (auto_rule_applies($page, $element));
+  return "<HR CLASS=\"divider\">\n";
+}
+
+sub auto_rule_applies {
+  my ($page, $element) = @_;
+  return 0 unless (defined($element) && $element ne "");
+
+  my $setting = $page->{auto_rule_elements};
+  $setting = "" unless defined($setting);
+
+  foreach my $candidate (split(/,/, $setting)) {
+    $candidate =~ s/^\s+//;
+    $candidate =~ s/\s+$//;
+    $candidate = lc($candidate);
+    return 1 if ($candidate eq lc($element));
+  }
+
+  return 0;
 }
 
 sub html_footer_nav {
@@ -843,7 +878,8 @@ sub html_footer {
     push @cells, "  <TD ALIGN=\"${align}\">$footer[$i]</TD>\n";
   }
 
-  return "<TABLE WIDTH=\"100%\" CLASS=\"footer\">\n<TR>\n"
+  return html_auto_rule($page, "footer")
+    . "<TABLE WIDTH=\"100%\" CLASS=\"footer\">\n<TR>\n"
     . join("", @cells)
     . "</TR>\n</TABLE>\n";
 }

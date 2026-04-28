@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index ----------------------------------------------- #
-my $version = '3.0.0.17';
+my $version = '3.0.0.18';
 # --------------------------------------------------------------------------- #
 
 use strict;
@@ -40,18 +40,27 @@ my %CONFIG = (
   ORGANIZATION         => "",
   NAV_POSITION         => "top",
   BREADCRUMB_SEPARATOR => " &gt; ",
+  CENTER_TITLE         => 0,
   AUTO_RULE            => 1,
   AUTO_RULE_ELEMENTS   => "intro,body,toc,navigation,footer",
+  SUB_LOGO             => 0,
+  WRAP_SCRIPT_OUTPUT   => 0,
   SHOW_TOC             => 1,
   TREE_TOC             => 1,
   TOC_TITLE            => "",
   TOC_SUBTITLE         => "",
   APPEND_TOC_TO_BODY   => 1,
+  EXPAND_GROUPS        => 1,
+  EXPAND_GROUPS_DEPTH  => 1,
   HOME_PAGE_TITLE      => "Home",
   FOOTER_NAV           => 1,
+  MEDITATE             => 0,
   API_ENABLED          => 1,
   DEBUG_TRACE          => 0,
+  LOGO                 => "",
   FAVICON              => "/res/sys/favicon.ico",
+  MEDITATION_DIRECTORY => "res/img/meditations",
+  SITE_MEDITATION_DIRECTORY => "/res/img/meditations",
   SITE_STYLE_DIRECTORY => "/res/style",
   MAIN_STYLESHEET      => undef,
   LEGACY_STYLESHEET    => undef,
@@ -349,10 +358,16 @@ sub load_config_file {
       $CONFIG{NAV_POSITION} = $value;
     } elsif ($key eq "breadcrumb_separator") {
       $CONFIG{BREADCRUMB_SEPARATOR} = $value;
+    } elsif ($key eq "center_title") {
+      $CONFIG{CENTER_TITLE} = $value;
     } elsif ($key eq "auto_rule") {
       $CONFIG{AUTO_RULE} = $value;
     } elsif ($key eq "auto_rule_elements") {
       $CONFIG{AUTO_RULE_ELEMENTS} = $value;
+    } elsif ($key eq "sub_logo") {
+      $CONFIG{SUB_LOGO} = $value;
+    } elsif ($key eq "wrap_script_output") {
+      $CONFIG{WRAP_SCRIPT_OUTPUT} = $value;
     } elsif ($key eq "show_toc") {
       $CONFIG{SHOW_TOC} = $value;
     } elsif ($key eq "tree_toc") {
@@ -363,16 +378,28 @@ sub load_config_file {
       $CONFIG{TOC_SUBTITLE} = $value;
     } elsif ($key eq "append_toc_to_body") {
       $CONFIG{APPEND_TOC_TO_BODY} = $value;
+    } elsif ($key eq "expand_groups") {
+      $CONFIG{EXPAND_GROUPS} = $value;
+    } elsif ($key eq "expand_groups_depth") {
+      $CONFIG{EXPAND_GROUPS_DEPTH} = $value;
     } elsif ($key eq "home_page_title") {
       $CONFIG{HOME_PAGE_TITLE} = $value;
     } elsif ($key eq "footer_nav") {
       $CONFIG{FOOTER_NAV} = $value;
+    } elsif ($key eq "meditate") {
+      $CONFIG{MEDITATE} = $value;
     } elsif ($key eq "api_enabled") {
       $CONFIG{API_ENABLED} = $value;
     } elsif ($key eq "debug_trace") {
       $CONFIG{DEBUG_TRACE} = $value;
+    } elsif ($key eq "logo") {
+      $CONFIG{LOGO} = $value;
     } elsif ($key eq "favicon") {
       $CONFIG{FAVICON} = $value;
+    } elsif ($key eq "meditation_directory") {
+      $CONFIG{MEDITATION_DIRECTORY} = $value;
+    } elsif ($key eq "site_meditation_directory") {
+      $CONFIG{SITE_MEDITATION_DIRECTORY} = $value;
     } elsif ($key eq "site_style_directory") {
       $CONFIG{SITE_STYLE_DIRECTORY} = $value;
       $CONFIG{MAIN_STYLESHEET}   = "$value/style.css"
@@ -714,6 +741,47 @@ sub resolve_local_path {
   return;
 }
 
+sub resolve_local_dir {
+  my ($path) = @_;
+  return unless ($path);
+
+  if ($path =~ m{^/}) {
+    my $candidate = normalize_path(($RUNTIME{document_root} || "") . $path);
+    return $candidate if ($candidate && -d $candidate);
+  }
+
+  my @search = grep { defined($_) && $_ ne "" } (
+    $RUNTIME{logical_cwd},
+    $RUNTIME{site_root},
+    $RUNTIME{document_root},
+  );
+
+  foreach my $base (@search) {
+    my $candidate = normalize_path("${base}/${path}");
+    return $candidate if ($candidate && -d $candidate);
+  }
+
+  return;
+}
+
+sub get_meditation {
+  return unless (config_enabled($CONFIG{MEDITATE}));
+
+  my $dir = resolve_local_dir($CONFIG{MEDITATION_DIRECTORY});
+  return unless ($dir);
+
+  opendir(my $dh, $dir)
+    or emit_error("Failed to read meditation directory $dir: $!");
+  my @meditations = grep { $_ !~ /^\./ && -f "${dir}/$_" } readdir($dh);
+  closedir($dh);
+  return unless (@meditations);
+
+  my $selected = $meditations[int(rand(@meditations))];
+  my $url_base = $CONFIG{SITE_MEDITATION_DIRECTORY};
+  $url_base =~ s{/$}{};
+  return "<IMG SRC=\"${url_base}/${selected}\" CLASS=\"meditation\">\n";
+}
+
 # --------------------------------------------------------------------------- #
 # /// Subelement assembly ///
 # Build navigation, titles, body content, TOC data, and footer inputs from
@@ -734,9 +802,14 @@ sub assemble_page {
     toc_entries       => \@toc_entries,
     breadcrumbs       => \@breadcrumbs,
     footer_nav        => \@footer_nav,
+    is_root           => page_is_root(),
     nav_position      => navigation_position(),
     auto_rule         => $CONFIG{AUTO_RULE},
     auto_rule_elements => $CONFIG{AUTO_RULE_ELEMENTS},
+    center_title      => $CONFIG{CENTER_TITLE},
+    sub_logo          => $CONFIG{SUB_LOGO},
+    logo              => $CONFIG{LOGO},
+    meditation        => scalar(get_meditation()),
     site_name         => $CONFIG{SITE_NAME},
     favicon           => $CONFIG{FAVICON},
     main_stylesheet   => $CONFIG{MAIN_STYLESHEET},
@@ -778,7 +851,18 @@ sub html_title {
   my ($page) = @_;
   my $title = $page->{title};
   return unless ($title);
-  return "<H1 ID=\"title\"><B>${title}</B></H1>\n";
+
+  my $title_html = "<H1 ID=\"title\"><B>${title}</B></H1>\n";
+  if ($page->{logo} && ($page->{is_root} || config_enabled($page->{sub_logo}))) {
+    $title_html = "<TABLE><TR>\n"
+      . "<TD><IMG SRC=\"$page->{logo}\"></TD>\n"
+      . "<TD>${title_html}</TD>\n"
+      . "</TR></TABLE>\n";
+  }
+  $title_html = $page->{meditation} . $title_html if ($page->{meditation});
+  $title_html = "<CENTER>\n${title_html}</CENTER>\n"
+    if (config_enabled($page->{center_title}));
+  return $title_html;
 }
 
 sub html_subtitle {

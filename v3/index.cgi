@@ -833,7 +833,10 @@ sub html_auto_rule {
   my ($page, $element) = @_;
   return "" unless (config_enabled($page->{auto_rule}));
   return "" unless (auto_rule_applies($page, $element));
-  return "<HR CLASS=\"divider\">\n";
+
+  my $class = "divider";
+  $class .= " no_print" if (auto_rule_hidden_in_print($element));
+  return "<HR CLASS=\"${class}\">\n";
 }
 
 sub auto_rule_applies {
@@ -850,6 +853,12 @@ sub auto_rule_applies {
     return 1 if ($candidate eq lc($element));
   }
 
+  return 0;
+}
+
+sub auto_rule_hidden_in_print {
+  my ($element) = @_;
+  return 1 if (defined($element) && $element eq "navigation");
   return 0;
 }
 

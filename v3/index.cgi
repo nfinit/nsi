@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index ----------------------------------------------- #
-my $version = '3.0.0.19';
+my $version = '3.0.0.20';
 # --------------------------------------------------------------------------- #
 
 use strict;
@@ -706,16 +706,19 @@ sub get_toc_entry {
 }
 
 sub get_toc {
+  my ($dir) = @_;
+  $dir = $RUNTIME{logical_cwd} unless (defined($dir) && $dir ne "");
+
   return unless (config_enabled($CONFIG{SHOW_TOC}));
   return unless (config_enabled($CONFIG{TREE_TOC}));
 
-  opendir(my $dh, $RUNTIME{logical_cwd})
-    or emit_error("Failed to read content directory $RUNTIME{logical_cwd}: $!");
+  opendir(my $dh, $dir)
+    or emit_error("Failed to read content directory $dir: $!");
 
   my @entries;
   foreach my $item (readdir($dh)) {
     next if ($item =~ /^\.\.?$/);
-    my $path = content_file_path($RUNTIME{logical_cwd}, $item);
+    my $path = content_file_path($dir, $item);
     next unless (-d $path);
     my $entry = get_toc_entry($path);
     push @entries, $entry if ($entry);
@@ -903,20 +906,56 @@ sub html_toc {
   my @entries = @{$page->{toc_entries}};
   return unless (@entries);
 
-  my @items;
-  foreach my $entry (@entries) {
-    my $display_title = $entry->{group_title} || $entry->{title};
-    my $item = "<A HREF=\"$entry->{path}\">$display_title</A>";
-    $item = "<H3>${item}</H3>";
-    $item .= "\n<P>$entry->{description}</P>" if ($entry->{description});
-    push @items, "<LI>\n${item}\n</LI>\n";
-  }
+  my $toc_items = html_toc_items(\@entries, 1);
+  return unless ($toc_items);
 
-  my $toc = "<UL>\n" . join("", @items) . "</UL>\n";
+  my $toc = "<UL>\n${toc_items}</UL>\n";
   $toc = "<P>\n$CONFIG{TOC_SUBTITLE}</P>\n${toc}" if ($CONFIG{TOC_SUBTITLE});
   $toc = "<H2>$CONFIG{TOC_TITLE}</H2>\n${toc}" if ($CONFIG{TOC_TITLE});
   return html_auto_rule($page, "toc")
     . "<DIV ID=\"contents\">\n${toc}</DIV>\n";
+}
+
+sub html_toc_items {
+  my ($entries_ref, $depth) = @_;
+  return unless ($entries_ref && @{$entries_ref});
+  $depth = 1 unless ($depth);
+
+  my @items;
+  foreach my $entry (@{$entries_ref}) {
+    my $display_title = $entry->{group_title} || $entry->{title};
+    my $item = "<A HREF=\"$entry->{path}\">$display_title</A>";
+    $item = "<H3>${item}</H3>";
+    $item .= "\n<P>$entry->{description}</P>" if ($entry->{description});
+
+    if (toc_entry_expands($entry, $depth)) {
+      my $group_intro = read_content_file($entry->{fs_path}, $CONFIG{INTRO_FILE});
+      $item .= "\n${group_intro}" if ($group_intro);
+
+      if (!$entry->{description}) {
+        my $group_body = read_content_file($entry->{fs_path}, $CONFIG{BODY_FILE});
+        $item .= "\n${group_body}" if ($group_body);
+      }
+
+      my @sub_entries = get_toc($entry->{fs_path});
+      my $sub_items = html_toc_items(\@sub_entries, $depth + 1) if (@sub_entries);
+      $item .= "\n<UL>\n${sub_items}</UL>" if ($sub_items);
+    }
+
+    push @items, "<LI>\n${item}\n</LI>\n";
+  }
+
+  return join("", @items);
+}
+
+sub toc_entry_expands {
+  my ($entry, $depth) = @_;
+  return 0 unless ($entry && $entry->{is_group});
+  return 0 unless (config_enabled($CONFIG{EXPAND_GROUPS}));
+  my $max_depth = $CONFIG{EXPAND_GROUPS_DEPTH};
+  $max_depth = 0 unless (defined($max_depth) && $max_depth =~ /^\d+$/);
+  return 0 unless ($depth <= $max_depth);
+  return 1;
 }
 
 sub html_body {

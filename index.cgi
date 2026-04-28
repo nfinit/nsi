@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index ----------------------------------------------- #
-my $version = '3.0.0.21';
+my $version = '3.0.0.22';
 # --------------------------------------------------------------------------- #
 
 use strict;
@@ -57,11 +57,13 @@ my %CONFIG = (
   MEDITATE             => 0,
   API_ENABLED          => 1,
   DEBUG_TRACE          => 0,
-  LOGO                 => "",
-  FAVICON              => "/res/sys/favicon.ico",
+  SITE_RESOURCE_DIRECTORY => "/res",
+  SITE_SYSRES_DIRECTORY => undef,
+  LOGO                 => undef,
+  FAVICON              => undef,
   MEDITATION_DIRECTORY => "res/img/meditations",
   SITE_MEDITATION_DIRECTORY => "/res/img/meditations",
-  SITE_STYLE_DIRECTORY => "/res/style",
+  SITE_STYLE_DIRECTORY => undef,
   MAIN_STYLESHEET      => undef,
   LEGACY_STYLESHEET    => undef,
   HTML_DOCTYPE         => 'HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd"',
@@ -72,9 +74,17 @@ my %CONFIG = (
   PAGE_META_KEYWORDS    => "",
 );
 
+$CONFIG{SITE_SYSRES_DIRECTORY} = "$CONFIG{SITE_RESOURCE_DIRECTORY}/sys";
+$CONFIG{SITE_STYLE_DIRECTORY}  = "$CONFIG{SITE_RESOURCE_DIRECTORY}/style";
+$CONFIG{LOGO}                  = "$CONFIG{SITE_SYSRES_DIRECTORY}/logo.gif";
+$CONFIG{FAVICON}               = "$CONFIG{SITE_SYSRES_DIRECTORY}/favicon.ico";
 $CONFIG{MAIN_STYLESHEET}   = "$CONFIG{SITE_STYLE_DIRECTORY}/style.css";
 $CONFIG{LEGACY_STYLESHEET} = "$CONFIG{SITE_STYLE_DIRECTORY}/legacy.css";
 
+my $SITE_SYSRES_DIRECTORY_EXPLICIT = 0;
+my $SITE_STYLE_DIRECTORY_EXPLICIT  = 0;
+my $LOGO_EXPLICIT                  = 0;
+my $FAVICON_EXPLICIT               = 0;
 my $MAIN_STYLESHEET_EXPLICIT   = 0;
 my $LEGACY_STYLESHEET_EXPLICIT = 0;
 
@@ -392,16 +402,40 @@ sub load_config_file {
       $CONFIG{API_ENABLED} = $value;
     } elsif ($key eq "debug_trace") {
       $CONFIG{DEBUG_TRACE} = $value;
+    } elsif ($key eq "site_resource_directory") {
+      $CONFIG{SITE_RESOURCE_DIRECTORY} = $value;
+      if (!$SITE_SYSRES_DIRECTORY_EXPLICIT) {
+        $CONFIG{SITE_SYSRES_DIRECTORY} = "$value/sys";
+        $CONFIG{LOGO} = "$CONFIG{SITE_SYSRES_DIRECTORY}/logo.gif"
+          unless ($LOGO_EXPLICIT);
+        $CONFIG{FAVICON} = "$CONFIG{SITE_SYSRES_DIRECTORY}/favicon.ico"
+          unless ($FAVICON_EXPLICIT);
+      }
+      if (!$SITE_STYLE_DIRECTORY_EXPLICIT) {
+        $CONFIG{SITE_STYLE_DIRECTORY} = "$value/style";
+        $CONFIG{MAIN_STYLESHEET} = "$CONFIG{SITE_STYLE_DIRECTORY}/style.css"
+          unless ($MAIN_STYLESHEET_EXPLICIT);
+        $CONFIG{LEGACY_STYLESHEET} = "$CONFIG{SITE_STYLE_DIRECTORY}/legacy.css"
+          unless ($LEGACY_STYLESHEET_EXPLICIT);
+      }
+    } elsif ($key eq "site_sysres_directory") {
+      $CONFIG{SITE_SYSRES_DIRECTORY} = $value;
+      $SITE_SYSRES_DIRECTORY_EXPLICIT = 1;
+      $CONFIG{LOGO} = "$value/logo.gif" unless ($LOGO_EXPLICIT);
+      $CONFIG{FAVICON} = "$value/favicon.ico" unless ($FAVICON_EXPLICIT);
     } elsif ($key eq "logo") {
       $CONFIG{LOGO} = $value;
+      $LOGO_EXPLICIT = 1;
     } elsif ($key eq "favicon") {
       $CONFIG{FAVICON} = $value;
+      $FAVICON_EXPLICIT = 1;
     } elsif ($key eq "meditation_directory") {
       $CONFIG{MEDITATION_DIRECTORY} = $value;
     } elsif ($key eq "site_meditation_directory") {
       $CONFIG{SITE_MEDITATION_DIRECTORY} = $value;
     } elsif ($key eq "site_style_directory") {
       $CONFIG{SITE_STYLE_DIRECTORY} = $value;
+      $SITE_STYLE_DIRECTORY_EXPLICIT = 1;
       $CONFIG{MAIN_STYLESHEET}   = "$value/style.css"
         unless ($MAIN_STYLESHEET_EXPLICIT);
       $CONFIG{LEGACY_STYLESHEET} = "$value/legacy.css"

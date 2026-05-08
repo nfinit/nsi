@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # NSI: The New Standard Index ----------------------------------------------- #
-my $version = '3.0.0.23';
+my $version = '3.0.0.24';
 # --------------------------------------------------------------------------- #
 
 use strict;
@@ -688,6 +688,85 @@ sub get_intro {
   return read_content_file($RUNTIME{logical_cwd}, $CONFIG{INTRO_FILE});
 }
 
+sub body_fragment_is_script {
+  my ($path) = @_;
+  return 0 unless ($path && -f $path && -x $path);
+
+  open(my $fh, '<', $path) or return 0;
+  my $first_line = <$fh>;
+  close($fh);
+  return ($first_line && $first_line =~ /^#!/) ? 1 : 0;
+}
+
+sub body_fragment_wraps_output {
+  my ($path) = @_;
+  my $wrap = config_enabled($CONFIG{WRAP_SCRIPT_OUTPUT});
+
+  open(my $fh, '<', $path) or return $wrap;
+  <$fh>;
+  my $line2 = <$fh>;
+  close($fh);
+
+  if ($line2) {
+    $wrap = 1 if ($line2 =~ /^\s*#\s*WRAP\s*$/i);
+    $wrap = 0 if ($line2 =~ /^\s*#\s*NO\s*WRAP\s*$/i);
+  }
+
+  return $wrap;
+}
+
+sub execute_body_fragment {
+  my ($path, $display_path) = @_;
+  return unless ($path);
+
+  my $pid = open(my $fh, '-|');
+  emit_error("Failed to fork body fragment $display_path: $!") unless (defined($pid));
+
+  if ($pid == 0) {
+    chdir($RUNTIME{logical_cwd})
+      or do {
+        print "Failed to enter content directory $RUNTIME{logical_cwd}: $!\n";
+        exit 126;
+      };
+    open(STDERR, '>&', STDOUT)
+      or do {
+        print "Failed to redirect stderr for $display_path: $!\n";
+        exit 126;
+      };
+    exec($path) or do {
+      print "Failed to execute body fragment $display_path: $!\n";
+      exit 127;
+    };
+  }
+
+  my $output = "";
+  while (my $line = <$fh>) {
+    $output .= $line;
+  }
+  close($fh);
+  my $status = $?;
+
+  if ($status != 0) {
+    my $exit_status = $status >> 8;
+    my $signal = $status & 127;
+    my $message = "Body fragment $display_path exited with status $exit_status";
+    $message .= " after signal $signal" if ($signal);
+    debug_line("body fragments", $message);
+  }
+
+  return $output;
+}
+
+sub read_body_fragment {
+  my ($path, $display_path) = @_;
+  return read_text_file($path) unless (body_fragment_is_script($path));
+
+  my $content = execute_body_fragment($path, $display_path);
+  return unless (defined($content) && $content ne "");
+  return "<PRE>\n${content}</PRE>\n" if (body_fragment_wraps_output($path));
+  return $content;
+}
+
 sub get_body {
   my @chunks;
 
@@ -702,7 +781,7 @@ sub get_body {
     closedir($dh);
 
     foreach my $fragment (@fragments) {
-      my $content = read_text_file("${body_dir}/${fragment}");
+      my $content = read_body_fragment("${body_dir}/${fragment}", "body/$fragment");
       push @chunks, $content if (defined($content) && $content ne "");
     }
   }

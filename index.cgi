@@ -698,19 +698,67 @@ sub body_fragment_is_script {
   return ($first_line && $first_line =~ /^#!/) ? 1 : 0;
 }
 
-sub body_fragment_wraps_output {
+sub body_fragment_attributes {
   my ($path) = @_;
-  my $wrap = config_enabled($CONFIG{WRAP_SCRIPT_OUTPUT});
+  my %attributes = (
+    title => undef,
+    wrap  => undef,
+  );
 
-  open(my $fh, '<', $path) or return $wrap;
+  open(my $fh, '<', $path) or return \%attributes;
   <$fh>;
   my $line2 = <$fh>;
   close($fh);
 
-  if ($line2) {
-    $wrap = 1 if ($line2 =~ /^\s*#\s*WRAP\s*$/i);
-    $wrap = 0 if ($line2 =~ /^\s*#\s*NO\s*WRAP\s*$/i);
+  return \%attributes unless ($line2 && $line2 =~ /^\s*#(.*)$/);
+
+  my $line = $1;
+  $line =~ s/\r?\n$//;
+  $line =~ s/^\s+//;
+  $line =~ s/\s+$//;
+
+  if ($line =~ /^WRAP$/i) {
+    $attributes{wrap} = 1;
+    return \%attributes;
   }
+  if ($line =~ /^NO\s+WRAP$/i) {
+    $attributes{wrap} = 0;
+    return \%attributes;
+  }
+
+  foreach my $part (split(/\s*;\s*/, $line)) {
+    $part =~ s/^\s+//;
+    $part =~ s/\s+$//;
+    next unless ($part);
+
+    if ($part =~ /^wrap$/i) {
+      $attributes{wrap} = 1;
+      next;
+    }
+    if ($part =~ /^(?:no\s*wrap|nowrap)$/i) {
+      $attributes{wrap} = 0;
+      next;
+    }
+    if ($part =~ /^title\s*=\s*(.+)$/i) {
+      my $title = $1;
+      $title =~ s/^\s+//;
+      $title =~ s/\s+$//;
+      if ($title =~ /^"(.*)"$/ || $title =~ /^'(.*)'$/) {
+        $title = $1;
+        $title =~ s/\\(["'\\])/$1/g;
+      }
+      $attributes{title} = $title if ($title ne "");
+    }
+  }
+
+  return \%attributes;
+}
+
+sub body_fragment_wraps_output {
+  my ($path, $attributes) = @_;
+  my $wrap = config_enabled($CONFIG{WRAP_SCRIPT_OUTPUT});
+  $attributes = body_fragment_attributes($path) unless ($attributes);
+  $wrap = $attributes->{wrap} if (defined($attributes->{wrap}));
 
   return $wrap;
 }
@@ -761,9 +809,12 @@ sub read_body_fragment {
   my ($path, $display_path) = @_;
   return read_text_file($path) unless (body_fragment_is_script($path));
 
+  my $attributes = body_fragment_attributes($path);
   my $content = execute_body_fragment($path, $display_path);
   return unless (defined($content) && $content ne "");
-  return "<PRE>\n${content}</PRE>\n" if (body_fragment_wraps_output($path));
+  $content = "<PRE>\n${content}</PRE>\n" if (body_fragment_wraps_output($path, $attributes));
+  $content = "<H2>" . html_escape($attributes->{title}) . "</H2>\n" . $content
+    if (defined($attributes->{title}) && $attributes->{title} ne "");
   return $content;
 }
 

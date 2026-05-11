@@ -45,11 +45,10 @@ my %CONFIG = (
   AUTO_RULE_ELEMENTS   => "intro,body,toc,navigation,footer",
   SUB_LOGO             => 0,
   WRAP_SCRIPT_OUTPUT   => 0,
-  SHOW_TOC             => 1,
+  TOC                  => "top",
   TREE_TOC             => 1,
   TOC_TITLE            => "",
   TOC_SUBTITLE         => "",
-  APPEND_TOC_TO_BODY   => 1,
   EXPAND_GROUPS        => 1,
   EXPAND_GROUPS_DEPTH  => 1,
   HOME_PAGE_TITLE      => "Home",
@@ -378,16 +377,19 @@ sub load_config_file {
       $CONFIG{SUB_LOGO} = $value;
     } elsif ($key eq "wrap_script_output") {
       $CONFIG{WRAP_SCRIPT_OUTPUT} = $value;
-    } elsif ($key eq "show_toc") {
-      $CONFIG{SHOW_TOC} = $value;
+    } elsif ($key eq "toc") {
+      $value = lc($value);
+      unless ($value =~ /^(?:top|bottom|off)$/) {
+        close($fh);
+        emit_error("Invalid toc value in $path at line $line_number: $value (expected top, bottom, or off)");
+      }
+      $CONFIG{TOC} = $value;
     } elsif ($key eq "tree_toc") {
       $CONFIG{TREE_TOC} = $value;
     } elsif ($key eq "toc_title") {
       $CONFIG{TOC_TITLE} = $value;
     } elsif ($key eq "toc_subtitle") {
       $CONFIG{TOC_SUBTITLE} = $value;
-    } elsif ($key eq "append_toc_to_body") {
-      $CONFIG{APPEND_TOC_TO_BODY} = $value;
     } elsif ($key eq "expand_groups") {
       $CONFIG{EXPAND_GROUPS} = $value;
     } elsif ($key eq "expand_groups_depth") {
@@ -873,7 +875,7 @@ sub get_toc {
   my ($dir) = @_;
   $dir = $RUNTIME{logical_cwd} unless (defined($dir) && $dir ne "");
 
-  return unless (config_enabled($CONFIG{SHOW_TOC}));
+  return if ($CONFIG{TOC} eq "off");
   return unless (config_enabled($CONFIG{TREE_TOC}));
 
   opendir(my $dh, $dir)
@@ -1128,8 +1130,11 @@ sub html_body {
   my $toc  = html_toc($page);
   my @sections;
 
+  if ($toc && $CONFIG{TOC} eq "top") {
+    push @sections, $toc;
+  }
   push @sections, html_auto_rule($page, "body") . $body if ($body);
-  if ($toc && (!$body || config_enabled($CONFIG{APPEND_TOC_TO_BODY}))) {
+  if ($toc && $CONFIG{TOC} eq "bottom") {
     push @sections, $toc;
   }
 

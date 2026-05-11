@@ -10,7 +10,7 @@ $SITE_NAME    = "NSI Development Repository";
 # $HOME_PAGE_TITLE  = "Home";           # Title for root page and breadcrumbs
 # $NAV_POSITION     = 1;                # Breadcrumbs: 1=top, -1=bottom, 0=off
 # $FOOTER_NAV       = 1;                # Footer navigation links
-# $SHOW_TOC         = 1;                # Generate table of contents
+# toc = top                            # Table of contents: top, bottom, or off
 # $CLOUDFLARE       = 0;                # Wrap sensitive data in SSE comments
 # $API_ENABLED      = 1;                # Random image API
 # $DEBUG_TRACE      = 0;                # Show timing/debug output

@@ -77,8 +77,8 @@ $TIMESTAMP_FORMAT   = ""; # strftime format; empty = localtime (setting loads PO
 
 # Keys a page only takes from its own config, never from a parent's
 %LOCAL_KEYS = (
-	PAGE_DESCRIPTION => "",
-	PAGE_KEYWORDS => "",
+	PAGE_DESCRIPTION => 1,
+	PAGE_KEYWORDS => 1,
 	SITE_ROOT => 1,
 	NAV_ROOT => 1, 
 	PAGE_TITLE => 1, 

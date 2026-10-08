@@ -16,7 +16,3 @@ body { padding: 1vw; }
 	.script-output { font-size: 14px; } 
 }
 
-@media print
-{
-    .no_print { display: none !important; }
-}

@@ -1,12 +1,13 @@
-# NSI development/testing
-sandbox/
-archive/
-AGENTS/
-.kiro/
+# Development documentation (promoted to wiki)
+docs/*
 
-# Site-specific configuration
-res/config.pl
+# Agent steering and testing areas
+sandbox/*
+archive/*
+AGENTS/*
+.kiro/*
 
-# macOS
+# Miscellaneous files
+*.swp 
 .DS_Store
 ._*

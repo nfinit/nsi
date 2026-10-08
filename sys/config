@@ -1,0 +1,46 @@
+# NSI site configuration
+#
+# KEY=VALUE, one setting per line. Keys are the names of the settings in the
+# defaults block at the top of index.cgi, in any case (toc=top and TOC=top are
+# the same). Only settings that exist there can be set; anything else is
+# ignored. Values run to the end of the line; quotes are kept as typed.
+#
+# Pages below this one inherit these settings. A page that needs to differ
+# gets its own sys/config with just the settings it changes. Its title and
+# description belong in its info file, not here.
+#
+# Path settings may refer to other settings: STYLE_DIR=${RESOURCE_DIR}/css
+
+# Site identity: <TITLE> suffix and footer
+SITE_TITLE=NSI Development Repository
+ORG_NAME=NFINIT labs
+ORG_URL=http://labs.nfinit.systems/
+COPYRIGHT_BEGIN=2022
+
+# Optional settings, shown with their defaults
+#
+# Layout
+# TOC=bottom                 # table of contents: top, bottom, or off
+# TOC_TITLE=                 # heading above the table of contents
+# TOC_SUBTITLE=              # text between that heading and the list
+# NAV_POSITION=top           # breadcrumbs: top, bottom, or off
+# AUTO_HR=1                  # horizontal rule between sections
+# CENTER_HEADER=0            # center the title and meditation image
+# WRAP_SCRIPT_OUTPUT=0       # wrap executable body/ fragment output in <PRE>
+#
+# Footer
+# FOOTER_NAV=1               # back to top, parent and home links
+# SHOW_COPYRIGHT=1           # copyright line (needs ORG_NAME)
+# TIMESTAMP_FORMAT=          # strftime format, e.g. [%a %b %e %H:%M:%S %Z %Y]
+#                            # (empty uses localtime; setting it loads POSIX)
+#
+# Paths, relative to each page
+# RESOURCE_DIR=res
+# STYLE_DIR=${RESOURCE_DIR}/style
+# LEGACY_STYLE_DIR=${STYLE_DIR}/legacy   # empty: no inlined legacy styles
+# MEDITATION_DIR=${RESOURCE_DIR}/meditations
+#
+# Nested sites: SITE_ROOT=1 makes this directory the top of its own site,
+# so nothing is inherited from NSI pages above it. Only read from a page's
+# own config, never inherited.
+# SITE_ROOT=0

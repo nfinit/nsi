@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 ###############################################################################
 # NSI: The New Standard Index       #                                         #
-my $version = '4.0.0.6';            #  A composer engine for simple websites  #
+my $version = '4.0.0.7';            #  A composer engine for simple websites  #
 my $author  = 'ict@nfinit.systems'; #                                         #
 ###############################################################################
 
@@ -50,10 +50,10 @@ EOF
 $DEFAULT_PAGE_TITLE = "Untitled";
 $PAGE_TITLE         = "";
 $ALT_PAGE_TITLE     = ""; # Short title for ToC listings and meta
-$PAGE_DESCRIPTION   = "";
-$PAGE_KEYWORDS      = "";
 $SITE_TITLE         = "";
 $ORG_NAME           = ""; # Useful for server landing pages
+$ORG_URL            = "";
+$COPYRIGHT_BEGIN    = "";
 
 # Presentation defaults
 $AUTO_HR            = 1;
@@ -62,15 +62,24 @@ $TOC                = "bottom";
 $TOC_TITLE          = "";
 $TOC_SUBTITLE       = "";
 $CENTER_HEADER      = 0;
-$WRAP_SCRIPT_OUTPUT = 0;        # Wrap executable fragments output in <PRE> tags
+$WRAP_SCRIPT_OUTPUT = 0; # Wrap executable fragments output in <PRE> tags
 $IMAGE_FILETYPES    = '\.(gif|jpe?g|png)$';
+$SHOW_COPYRIGHT     = 1;  # Only available when ORG_NAME is set 
+$FOOTER_NAV         = 1;  # Enable footer navigation controls
+$TIMESTAMP_FORMAT   = ""; # strftime format; empty = localtime (setting loads POSIX)
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Universal helpers
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 # Keys a page only takes from its own config, never from a parent's
-%LOCAL_KEYS = (SITE_ROOT => 1, PAGE_TITLE => 1, ALT_PAGE_TITLE => 1);
+%LOCAL_KEYS = (
+	PAGE_DESCRIPTION => "",
+	PAGE_KEYWORDS => "",
+	SITE_ROOT => 1, 
+	PAGE_TITLE => 1, 
+	ALT_PAGE_TITLE => 1
+);
 
 # PLAIN TEXT
 # Strip tags and escape HTML for use in <TITLE> and attribute values
@@ -349,6 +358,8 @@ sub metadata_style {
 		$style .= $css;
 	}
 	$style = "<STYLE TYPE=\"text/css\"><!--\n${style}//--></STYLE>\n" if ($style);
+	# Print rule: hide navigation and other no_print elements on paper
+	$style .= "<STYLE TYPE=\"text/css\" MEDIA=\"print\"><!--\n.no_print { display: none; }\n//--></STYLE>\n";
 	# Stylesheet linking
 	($style_dir, @files) = ("");
 	foreach my $candidate (crawl($STYLE_DIR)) {
@@ -581,10 +592,49 @@ sub page_body {
 # Page footer
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+# FOOTER NAVIGATION
+# Generates back to top, nearest parent page and home page controls
+sub footer_navigation {
+	return("") if (!$FOOTER_NAV);
+	my @links = ("<A HREF=\"#top\">Back to top</A>");
+	my $home = $_NSI_WEB_ROOT_STEP;
+	if ($home > 0) {
+		# Nearest parent that is an NSI page (skips plain directories)
+		my $parent = 1;
+		$parent++ while ($parent < $home && ! -f "$_NSI_CHAIN[$parent]/$_NSI_SCRIPT");
+		if ($parent < $home) {
+			my ($title, $alt) = info("$_NSI_CHAIN[$parent]/$INFO_FILE");
+			$alt = "Up" if ($alt eq "");
+			push(@links, "<A HREF=\"" . ("../" x $parent) . "\">${alt}</A>");
+		}
+		my ($title, $alt) = info("$_NSI_CHAIN[$home]/$INFO_FILE");
+		$alt = "Home" if ($alt eq "");
+		push(@links, "<A HREF=\"" . ("../" x $home) . "\">${alt}</A>");
+	}
+	return("<SPAN CLASS=\"footer_navigation no_print\">" . join(" | ", @links) . "</SPAN>");
+}
+
 # PAGE FOOTER
 # Render page footer from configuration
 sub page_footer {
-	my $footer = "";
+	my $stamp = scalar(localtime());
+	if ($TIMESTAMP_FORMAT) {
+		require POSIX; # loaded only when asked for: it doubles the page time
+		$stamp = POSIX::strftime($TIMESTAMP_FORMAT, localtime());
+	}
+	my $left = "<SPAN CLASS=\"timestamp\">${stamp}</SPAN>";
+	if ($COPYRIGHT_BEGIN || $ORG_NAME) {
+		my $year = (localtime())[5] + 1900;
+		my $years = $year;
+		$years = "${COPYRIGHT_BEGIN} - ${year}" if ($COPYRIGHT_BEGIN && $COPYRIGHT_BEGIN ne $year);
+		my $owner = $ORG_NAME;
+		$owner = "<A HREF=\"${ORG_URL}\">${owner}</A>" if ($owner && $ORG_URL);
+		$left .= "<BR>\n<SPAN CLASS=\"copyright\">(C) ${years} ${owner}</SPAN>" if ($SHOW_COPYRIGHT);
+	}
+	my $right = footer_navigation();
+	my $footer = "<TR>\n<TD ALIGN=\"LEFT\">${left}</TD>\n<TD ALIGN=\"RIGHT\">${right}</TD>\n</TR>\n";
+	$footer = "<TABLE WIDTH=\"100%\" CLASS=\"footer\">\n${footer}</TABLE>\n";
+	$footer = rule() . "<DIV ID=\"footer\">\n${footer}</DIV>\n";
 	return($footer);
 }
 
@@ -601,7 +651,7 @@ $_NSI_PAGE    .= "<HTML>\n";
 $_NSI_PAGE    .= "<HEAD>\n";
 $_NSI_PAGE    .= generate_metadata();
 $_NSI_PAGE    .= "</HEAD>\n";
-$_NSI_PAGE    .= "<BODY>\n";
+$_NSI_PAGE    .= "<BODY>\n<A NAME=\"top\"></A>\n";
 $_NSI_HEADER   = page_header();
 $_NSI_HEADER  .= page_navigation() if ($NAV_POSITION eq "top");
 $_NSI_CONTENT .= page_intro();

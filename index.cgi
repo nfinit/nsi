@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 ###############################################################################
 # NSI: The New Standard Index       #                                         #
-my $version = '4.0.0.7';            #  A composer engine for simple websites  #
+my $version = '4.0.0.8';            #  A composer engine for simple websites  #
 my $author  = 'ict@nfinit.systems'; #                                         #
 ###############################################################################
 
@@ -50,6 +50,8 @@ EOF
 $DEFAULT_PAGE_TITLE = "Untitled";
 $PAGE_TITLE         = "";
 $ALT_PAGE_TITLE     = ""; # Short title for ToC listings and meta
+$PAGE_DESCRIPTION   = "";
+$PAGE_KEYWORDS      = "";
 $SITE_TITLE         = "";
 $ORG_NAME           = ""; # Useful for server landing pages
 $ORG_URL            = "";
@@ -57,6 +59,7 @@ $COPYRIGHT_BEGIN    = "";
 
 # Presentation defaults
 $AUTO_HR            = 1;
+$NAV_BARS	    = "local";
 $NAV_POSITION       = "top";
 $TOC                = "bottom";
 $TOC_TITLE          = "";
@@ -76,7 +79,8 @@ $TIMESTAMP_FORMAT   = ""; # strftime format; empty = localtime (setting loads PO
 %LOCAL_KEYS = (
 	PAGE_DESCRIPTION => "",
 	PAGE_KEYWORDS => "",
-	SITE_ROOT => 1, 
+	SITE_ROOT => 1,
+	NAV_ROOT => 1, 
 	PAGE_TITLE => 1, 
 	ALT_PAGE_TITLE => 1
 );
@@ -143,18 +147,18 @@ sub web_root {
 	return(join("/", @file) || "/");
 }
 
-# SITE ROOT AT
-# Does the config in this directory set SITE_ROOT? (read before any
-# config is applied, so it can't come from a parent)
-sub site_root_at {
-	my ($dir) = @_;
-	my $site_root = 0;
+# CONFIG FLAG AT
+# Is a yes/no setting turned on in one directory's own config? Used for
+# per-directory markers (SITE_ROOT, NAV_ROOT) that are never inherited.
+sub config_flag_at {
+	my ($dir, $key) = @_;
+	my $flag = 0;
 	open(PEEK, "${dir}/${CONFIG_FILE}") or return(0);
 	while (<PEEK>) {
-		$site_root = $1 if (/^\s*site_root\s*=\s*(.*?)\s*$/i);
+		$flag = $1 if (/^\s*\Q${key}\E\s*=\s*(.*?)\s*$/i);
 	}
 	close(PEEK);
-	return($site_root ? 1 : 0);
+	return($flag ? 1 : 0);
 }
 
 # BUILD CHAIN
@@ -167,7 +171,7 @@ sub build_chain {
 	my $past_web_root = 0;
 	while (1) {
 		push(@chain, $dir);
-		last if (site_root_at($dir));
+		last if (config_flag_at($dir,'SITE_ROOT'));
 		$past_web_root = 1 if ($dir eq $_NSI_WEB_ROOT);
 		my $parent = parent_dir($dir);
 		last if ($parent eq $dir);
@@ -430,10 +434,60 @@ sub page_header {
 	return($header);
 }
 
+# NAV ROOT STEP
+# Step up the chain to the nearest NAV_ROOT page, or to the site home
+sub nav_root_step {
+	for (my $i = 0; $i < $_NSI_WEB_ROOT_STEP; $i++) {
+		return($i) if (config_flag_at($_NSI_CHAIN[$i], "NAV_ROOT"));
+	}
+	return($_NSI_WEB_ROOT_STEP);
+}
+
+# NAV BAR
+# Generate a navigation bar for the directory $step levels up
+# Page itself, or sections containing it, in bold
+sub nav_bar {
+	my ($step) = @_;
+	my $root = $_NSI_CHAIN[$step];
+	my $up = "../" x $step;
+	my @items = ();
+	my ($title, $alt) = info("${root}/${INFO_FILE}");
+	$alt = "Home" if ($alt eq "");
+	push(@items, ($step == 0) ? "<I>${alt}</I>" : "<A HREF=\"${up}\">${alt}</A>");
+	foreach my $entry (toc_entries($root)) {
+		my ($name, $label) = @$entry;
+		my $dir = "${root}/${name}";
+		my $item = "<A HREF=\"${up}" . url_path($name) . "/\">${label}</A>";
+		$item = "<I>${label}</I>" if ($dir eq $_NSI_CHAIN[0]);
+		$item = "<B>${item}</B>" if (grep { $_ eq $dir } @_NSI_CHAIN[1 .. $step - 1]);
+		push(@items, $item);
+	}
+	return("") if (@items < 2); # no sections to display
+	return("<DIV CLASS=\"nav_bar\">" . join(" | ", @items) . "</DIV>\n");
+} 
+
+# PAGE ROOT NAVIGATION
+# Assemble page navigation bar, always pointing to the root TOC 
+sub page_root_navigation {
+	return (nav_bar($_NSI_WEB_ROOT_STEP));
+}
+
+# PAGE LOCAL NAVIGATION
+# Assemble page navigation bar, always pointing to the nearest NAV_ROOT TOC 
+sub page_local_navigation {
+	return (nav_bar(nav_root_step()));
+}
+
 # PAGE NAVIGATION
-# Assemble page navigation breadcrumbs
+# Assemble page navigation bar using root, local or both.
+
 sub page_navigation {
 	my $navigation = "";
+	$navigation .= page_root_navigation()
+		if ($NAV_BARS eq "root" || ($NAV_BARS eq "both" && nav_root_step() != $_NSI_WEB_ROOT_STEP));
+	$navigation .= page_local_navigation() if ($NAV_BARS eq "local" || $NAV_BARS eq "both");
+	return("") if (!$navigation);
+	$navigation = rule("no_print") . "<DIV ID=\"navigation\" CLASS=\"no_print\">\n${navigation}</DIV>\n";
 	return($navigation);
 }
 
@@ -444,8 +498,10 @@ sub page_navigation {
 # RULE
 # Insert a horizontal rule based on configuration
 sub rule {
+	my ($class) = @_;
 	return("") if (!$AUTO_HR || (!$_NSI_HEADER && !$_NSI_CONTENT));
-	return("<HR CLASS=\"rule\">\n");
+	$class = $class ? "rule ${class}" : "rule";
+	return("<HR CLASS=\"${class}\">\n");
 }
 
 # PAGE INTRO
@@ -465,12 +521,13 @@ sub page_intro {
 # Gather an array of subdirectories with valid .info files
 # Returns entries with name, short name and description
 sub toc_entries {
+	my ($dir) = @_;
 	my @entries = ();
-	opendir(CHILDREN, $_NSI_PAGE_DIR) or return(@entries);
-	my @names = grep { !/^\./ && -d "${_NSI_PAGE_DIR}/$_" } readdir(CHILDREN);
+	opendir(CHILDREN, $dir) or return(@entries);
+	my @names = grep { !/^\./ && -d "${dir}/$_" } readdir(CHILDREN);
 	closedir(CHILDREN);
 	foreach my $name (@names) {
-		my $info = "${_NSI_PAGE_DIR}/${name}/${INFO_FILE}";
+		my $info = "${dir}/${name}/${INFO_FILE}";
 		next if (! -f $info);
 		my ($title, $alt, $description) = info($info);
 		next if ($alt eq "");
@@ -484,7 +541,7 @@ sub toc_entries {
 # Build a site table of contents to child directories from metadata files 
 sub table_of_contents {
 	my $toc = "";
-	foreach my $entry (toc_entries()) {
+	foreach my $entry (toc_entries($_NSI_PAGE_DIR)) {
 		my ($name, $alt, $description) = @$entry;
 		my $item = "<H3><A HREF=\"" . url_path($name) . "/\">${alt}</A></H3>\n";
 		$item .= "<P>${description}</P>\n" if ($description ne "");

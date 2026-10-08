@@ -23,7 +23,11 @@ COPYRIGHT_BEGIN=2022
 # TOC=bottom                 # table of contents: top, bottom, or off
 # TOC_TITLE=                 # heading above the table of contents
 # TOC_SUBTITLE=              # text between that heading and the list
-# NAV_POSITION=top           # breadcrumbs: top, bottom, or off
+# NAV_POSITION=top           # navigation bar: top or bottom
+# NAV_BARS=local             # local: sections of the nearest NAV_ROOT (or home)
+#                            # root: home's sections on every page
+#                            # both: home's bar too, inside NAV_ROOT sections
+#                            # none: no navigation bar
 # AUTO_HR=1                  # horizontal rule between sections
 # CENTER_HEADER=0            # center the title and meditation image
 # WRAP_SCRIPT_OUTPUT=0       # wrap executable body/ fragment output in <PRE>
@@ -44,3 +48,8 @@ COPYRIGHT_BEGIN=2022
 # so nothing is inherited from NSI pages above it. Only read from a page's
 # own config, never inherited.
 # SITE_ROOT=0
+#
+# Sections: NAV_ROOT=1 makes this page's sections the navigation bar for
+# itself and every page below it (a museum's exhibit categories, say).
+# Only read from a page's own config, never inherited.
+# NAV_ROOT=0

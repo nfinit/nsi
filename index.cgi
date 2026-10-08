@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 ###############################################################################
 # NSI: The New Standard Index       #                                         #
-my $version = '4.0.0.5';            #  A composer engine for simple websites  #
+my $version = '4.0.0.6';            #  A composer engine for simple websites  #
 my $author  = 'ict@nfinit.systems'; #                                         #
 ###############################################################################
 
@@ -59,6 +59,8 @@ $ORG_NAME           = ""; # Useful for server landing pages
 $AUTO_HR            = 1;
 $NAV_POSITION       = "top";
 $TOC                = "bottom";
+$TOC_TITLE          = "";
+$TOC_SUBTITLE       = "";
 $CENTER_HEADER      = 0;
 $WRAP_SCRIPT_OUTPUT = 0;        # Wrap executable fragments output in <PRE> tags
 $IMAGE_FILETYPES    = '\.(gif|jpe?g|png)$';
@@ -194,6 +196,14 @@ sub url_for {
 		return(("../" x $i) . substr($path, length($dir) + 1));
 	}
 	return("");
+}
+
+# URL PATH
+# Escape a file or directory name for use in a link
+sub url_path {
+	my ($path) = @_;
+	$path =~ s/([^A-Za-z0-9_.~\/-])/sprintf("%%%02X", ord($1))/ge;
+	return($path);
 }
 
 # READ CONFIG
@@ -440,10 +450,40 @@ sub page_intro {
 	return($intro);
 }
 
+# TOC ENTRIES
+# Gather an array of subdirectories with valid .info files
+# Returns entries with name, short name and description
+sub toc_entries {
+	my @entries = ();
+	opendir(CHILDREN, $_NSI_PAGE_DIR) or return(@entries);
+	my @names = grep { !/^\./ && -d "${_NSI_PAGE_DIR}/$_" } readdir(CHILDREN);
+	closedir(CHILDREN);
+	foreach my $name (@names) {
+		my $info = "${_NSI_PAGE_DIR}/${name}/${INFO_FILE}";
+		next if (! -f $info);
+		my ($title, $alt, $description) = info($info);
+		next if ($alt eq "");
+		push(@entries, [$name, $alt, $description]);
+	}
+	@entries = sort { lc($$a[1]) cmp lc($$b[1]) } @entries;
+	return(@entries);
+}
+
 # TABLE OF CONTENTS
 # Build a site table of contents to child directories from metadata files 
 sub table_of_contents {
 	my $toc = "";
+	foreach my $entry (toc_entries()) {
+		my ($name, $alt, $description) = @$entry;
+		my $item = "<H3><A HREF=\"" . url_path($name) . "/\">${alt}</A></H3>\n";
+		$item .= "<P>${description}</P>\n" if ($description ne "");
+		$toc .= "<LI class=\"toc_item\">\n${item}</LI>\n";
+	}
+	return("") if (!$toc);
+	$toc = "<UL id=\"toc_list\">\n${toc}</UL>";
+	$toc = "<P id=\"toc_subtitle\">${TOC_SUBTITLE}</P>\n${toc}" if ($TOC_SUBTITLE);
+	$toc = "<H2 id=\"toc_subtitle\">${TOC_TITLE}</H2>\n${toc}" if ($TOC_TITLE);
+	$toc = rule() . "<DIV ID=\"toc\">\n${toc}</DIV>\n";
 	return($toc);
 }
 

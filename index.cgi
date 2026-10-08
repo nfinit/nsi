@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 ###############################################################################
 # NSI: The New Standard Index       #                                         #
-my $version = '4.0.0.8';            #  A composer engine for simple websites  #
+my $version = '4.0.0.9';            #  A composer engine for simple websites  #
 my $author  = 'ict@nfinit.systems'; #                                         #
 ###############################################################################
 
@@ -58,7 +58,8 @@ $ORG_URL            = "";
 $COPYRIGHT_BEGIN    = "";
 
 # Presentation defaults
-$AUTO_HR            = 1;
+$AUTO_HR            = 1; # Automatically separate sections with rules
+$SUB_LOGO           = 0; # Show logo on subpages
 $NAV_BARS	    = "local";
 $NAV_POSITION       = "top";
 $TOC                = "bottom";
@@ -187,12 +188,13 @@ sub build_chain {
 # Look for identical copies of a file or directory along the page's chain
 # Nearest/local files first
 sub crawl {
-	my ($path) = @_;
+	my @paths = grep { $_ ne "" } @_;
 	my @hits = ();
-	return(@hits) if ($path eq "");
 	foreach my $dir (@_NSI_CHAIN) {
-		my $hit = ($dir eq "/") ? "/${path}" : "${dir}/${path}";
-		push(@hits, $hit) if (-e $hit);
+		foreach my $path (@paths) {
+			my $hit = ($dir eq "/") ? "/${path}" : "${dir}/${path}";
+			push(@hits, $hit) if (-e $hit);
+		}
 	}
 	return(@hits);
 }
@@ -420,12 +422,32 @@ sub page_title {
 	return($title);
 }
 
+# PAGE LOGO
+# Site/page title logo, locates the nearest compatibly named file with
+# any extension listed in IMAGE_FILETYPES, or as named if extension specified
+# explicitly.
+sub page_logo {
+	return("") if ($_NSI_WEB_ROOT_STEP > 0 && !$SUB_LOGO);
+	my ($dir, $name) = ($LOGO_FILE =~ /^(.*)\/([^\/]+)$/) ? ($1, $2) : (".", $LOGO_FILE);
+	my $pattern = '^' . quotemeta($name);
+	$pattern .= ($name =~ /$IMAGE_FILETYPES/i) ? '$' : $IMAGE_FILETYPES;
+	foreach my $candidate (crawl($dir)) {
+		foreach my $file (directory_files($candidate, $pattern)) {
+			my $url = url_for("${candidate}/${file}");
+			return("<IMG SRC=\"${url}\" ALT=\"\" CLASS=\"logo\">") if ($url ne "");
+		}
+	}
+	return("");
+}
+
 # PAGE HEADER
 # Assemble page header content including logo, title, meditation, etc.
 sub page_header {
 	my $header = "";
 	my $title .= page_title();
 	return("") if (!$title);
+	my $logo = page_logo();
+	$title = "<TABLE><TR>\n<TD>${logo}</TD>\n<TD>${title}</TD>\n</TR></TABLE>\n" if ($logo);
 	$header = meditate();
 	$header .= $title;
 	return("") if (!$header);
@@ -604,8 +626,10 @@ sub body_fragment {
 	$options  = "" if (!defined($options) || $options !~ /^#/);
 	my $title = ($options =~ /title\s*=\s*"([^"]*)"/i) ? $1 : "";
 	my $wrap  = $WRAP_SCRIPT_OUTPUT;
-	$wrap = 1 if ($options =~ /\bwrap\b/i);
-	$wrap = 0 if ($options =~ /\bno\s*wrap\b/i);
+	foreach my $part (split(/;/, $options)) {
+		$wrap = 1 if ($part =~ /^\s*#?\s*wrap\s*$/i);
+		$wrap = 0 if ($part =~ /^\s*#?\s*no\s*wrap\s*$/i);
+	}
 	$fragment = run_fragment($path);
 	return("") if (!$fragment);
 	$fragment = "<PRE>\n${fragment}</PRE>\n" if ($wrap);

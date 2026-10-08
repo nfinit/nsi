@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 ###############################################################################
 # NSI: The New Standard Index       #                                         #
-my $version = '4.0.0.4';            #  A composer engine for simple websites  #
+my $version = '4.0.0.5';            #  A composer engine for simple websites  #
 my $author  = 'ict@nfinit.systems'; #                                         #
 ###############################################################################
 
@@ -48,10 +48,12 @@ EOF
 
 # Metadata defaults
 $DEFAULT_PAGE_TITLE = "Untitled";
-$PAGE_TITLE = "";
-$ALT_PAGE_TITLE = ""; # Short title for ToC listings and meta
-$SITE_TITLE = "";
-$ORG_NAME   = ""; # Useful for server landing pages
+$PAGE_TITLE         = "";
+$ALT_PAGE_TITLE     = ""; # Short title for ToC listings and meta
+$PAGE_DESCRIPTION   = "";
+$PAGE_KEYWORDS      = "";
+$SITE_TITLE         = "";
+$ORG_NAME           = ""; # Useful for server landing pages
 
 # Presentation defaults
 $AUTO_HR            = 1;
@@ -80,6 +82,29 @@ sub plain_text {
 	$text =~ s/</&lt;/g;
 	$text =~ s/>/&gt;/g;
 	$text =~ s/"/&quot;/g;
+	return($text);
+}
+
+# DIRECTORY FILES
+# Names of the files in a directory that match a pattern, in ls order.
+# Hidden files (editor swap files and the like) and subdirectories are skipped.
+sub directory_files {
+	my ($dir, $pattern) = @_;
+	my @files = ();
+	opendir(LISTING, $dir) or return(@files);
+	@files = sort grep { !/^\./ && /$pattern/i && -f "${dir}/$_" } readdir(LISTING);
+	closedir(LISTING);
+	return(@files);
+}
+
+# READ FILE
+# Whole contents of a file, or "" if it can't be read
+sub read_file {
+	my ($path) = @_;
+	my $text = "";
+	open(FILE, $path) or return($text);
+	$text .= $_ while (<FILE>);
+	close(FILE);
 	return($text);
 }
 
@@ -149,6 +174,7 @@ sub build_chain {
 sub crawl {
 	my ($path) = @_;
 	my @hits = ();
+	return(@hits) if ($path eq "");
 	foreach my $dir (@_NSI_CHAIN) {
 		my $hit = ($dir eq "/") ? "/${path}" : "${dir}/${path}";
 		push(@hits, $hit) if (-e $hit);
@@ -300,8 +326,30 @@ sub metadata_title {
 sub metadata_style {
 	my $style = "";
 	# Legacy stylesheet inlining
-	# Check for legacy stylesheet in configured directory
-	# If it does not exist, crawl up the tree
+	my ($style_dir, @files);
+	# Choose the first legacy style directory with files present
+	foreach my $candidate (crawl($LEGACY_STYLE_DIR)) {
+		@files = directory_files($candidate, '\.css$');
+		$style_dir = $candidate, last if (@files);
+	}
+	# Concatenate every CSS file into one block
+	foreach my $stylesheet (@files) {
+		my $css = read_file("${style_dir}/${stylesheet}");
+		$css .= "\n" if ($css ne "" && $css !~ /\n$/);
+		$style .= $css;
+	}
+	$style = "<STYLE TYPE=\"text/css\"><!--\n${style}//--></STYLE>\n" if ($style);
+	# Stylesheet linking
+	($style_dir, @files) = ("");
+	foreach my $candidate (crawl($STYLE_DIR)) {
+		@files = directory_files($candidate, '\.css$');
+		$style_dir = $candidate, last if (@files);
+	}
+	foreach my $stylesheet (@files) {
+		my $link = url_for("${style_dir}/${stylesheet}");
+		next if ($link eq ""); # above the web root
+		$style .= "<LINK REL=\"stylesheet\" TYPE=\"text/css\" HREF=\"${link}\" MEDIA=\"all\">\n";
+	}
 	return($style);
 }
 

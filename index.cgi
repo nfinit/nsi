@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 ###############################################################################
 # NSI: The New Standard Index       #                                         #
-my $version = '4.0.0.1';            #  A composer engine for simple websites  #
+my $version = '4.0.0.2';            #  A composer engine for simple websites  #
 my $author  = 'ict@nfinit.systems'; #                                         #
 ###############################################################################
 
@@ -9,10 +9,26 @@ my $author  = 'ict@nfinit.systems'; #                                         #
 # Site configuration
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+################# FOR NESTED-SITE DEPLOYMENTS:
+$SITE_ROOT = 0; # Configure this to 1 to prevent this page and its children
+################# from inheriting configuration settings from any NSI parents
+
 # Default special file paths
-$INTRO_FILE = "intro.html";
-$BODY_FILE  = "body.html";  # single-file body at same path as NSI
-$BODY_DIR   = "body/";      # fragmented body
+$SYSTEM_DIR        = "sys";
+$CONFIG_FILE       = "${SYSTEM_DIR}/config"; # Primary config file
+$INFO_FILE         = "info"; # Page info file for title, TOC and description
+$RESOURCE_DIR      = "res"; # icons, styles and other page cosmetics
+$FAVICON_FILE      = "${RESOURCE_DIR}/favicon.ico";
+$LOGO_FILE         = "${RESOURCE_DIR}/logo"; # NSI detects extension
+$MEDITATION_DIR    = "${RESOURCE_DIR}/meditations";
+$STYLE_DIR         = "${RESOURCE_DIR}/style"; # Linked CSS stylesheets
+$LEGACY_STYLE_DIR  = "${STYLE_DIR}/legacy"; # Direct-injected legacy CSS
+$SCRIPT_DIR        = "${RESOURCE_DIR}/scripts"; # Linked client scripts
+$LEGACY_SCRIPT_DIR = "${SCRIPT_DIR}/legacy"; # Direct-injected legacy scripts
+$IMAGE_DIR         = "img";
+$INTRO_FILE        = "intro.html";
+$BODY_FILE         = "body.html"; # single-file body, displays before fragments
+$BODY_DIR          = "body";     # fragmented body files and executables
 
 # HTML 4.01 transitional DOCTYPE assists newer browsers with legacy syntax
 $HTML_DOCTYPE    = "HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\"";
@@ -23,20 +39,103 @@ $STATIC_METADATA = <<EOF;
 <META NAME="viewport" CONTENT="width=device-width, initial-scale=1.0">
 EOF
 
+# Metadata defaults
+$DEFAULT_PAGE_TITLE = "Untitled";
+$PAGE_TITLE = "";
+$ALT_PAGE_TITLE = ""; # Short title for ToC listings and meta
+$SITE_TITLE = "";
+$ORG_NAME   = ""; # Useful for server landing pages
+
 # Presentation defaults
 $AUTO_HR            = 1;
 $NAV_POSITION       = "top";
 $TOC                = "bottom";
 $CENTER_HEADER      = 0;
 $WRAP_SCRIPT_OUTPUT = 0;        # Wrap executable fragments output in <PRE> tags
+$IMAGE_FILETYPES    = '\.(gif|jpe?g|png)$';
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Universal helpers
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# PLAIN TEXT
+# Strip tags and escape HTML for use in <TITLE> and attribute values
+sub plain_text {
+	my ($text) = @_;
+	$text =~ s/<[^>]*>//g;                         # drop tags
+	$text =~ s/\s+/ /g;                            # one line, single spaces
+	$text =~ s/^ //;
+	$text =~ s/ $//;
+	$text =~ s/&(?![A-Za-z]+;|#[0-9]+;)/&amp;/g;   # bare & only, keep &amp; etc.
+	$text =~ s/</&lt;/g;
+	$text =~ s/>/&gt;/g;
+	$text =~ s/"/&quot;/g;
+	return($text);
+}
+
+# CRAWL
+# Locate parent resources in nested pages. Returns an array of every matching
+# path until the pattern is broken. SERVER SIDE ONLY
+sub crawl {
+	my @hits = ();
+	return(@hits);
+}
+
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Page metadata 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+# INFO
+# Targeted 'info' metadata file parser
+# Returns an array of three elements (title, alt, description)
+sub info {
+	my ($path) = @_;
+	my @header = ();
+	my @description = ();
+	my $in_description = 0;
+	open(INFO, $path) or return("", "", "");
+	while (<INFO>) {
+		s/\r?\n$//;
+		if (!$in_description) {
+			next if (!@header && /^\s*$/); # skip leading blank lines
+			if (/^\s*$/) { $in_description = 1; next; }
+			push(@header, $_);
+		} else {
+			push(@description, $_);
+		}
+	}
+	close(INFO);
+	if (!$in_description && @header > 1) {
+		@description = splice(@header, 1); # v2 format: no blank line
+	}
+	shift(@description) while (@description && $description[0] =~ /^\s*$/);
+	pop(@description)   while (@description && $description[-1] =~ /^\s*$/);
+	my $alt = @header ? $header[0] : "";
+	my $title   = (@header > 1) ? $header[1] : $alt;
+	my $description = join("\n", @description);
+	return($title, $alt, $description);
+}
+
+# PAGE TITLES
+# Get untagged page title set from config, files or context
+sub page_titles {
+	my ($title, $alt) = ($PAGE_TITLE, $ALT_PAGE_TITLE); # "" unless configured
+	my ($info_title, $info_alt) = info($INFO_FILE);
+	$title = $info_title if ($title eq "");
+	$alt   = $info_alt   if ($alt eq "");
+	$alt   = $title if ($alt eq "");
+	$title = $alt   if ($title eq "");
+	$title = $alt = $DEFAULT_PAGE_TITLE if ($title eq "");
+	return($title, $alt);
+}
+
 # METADATA TITLE
-# Get page title from config, files or content
+# Get META tagged page title
 sub metadata_title {
-	my $title = "";
+	my @titles = page_titles();
+	my $title = @titles[1];
+	$title = "${title} - ${SITE_TITLE}" if ($SITE_TITLE);
+	$title = "<TITLE>${title}</TITLE>\n";
 	return($title);
 }
 
@@ -67,13 +166,24 @@ sub generate_metadata {
 # Display a random image above the page title from a configured path
 sub meditate {
 	my $meditation = "";
+	return("") if (! -d $MEDITATION_DIR); # Meditations do not crawl
+	opendir(MEDITATIONS,$MEDITATION_DIR) or return("");
+	my @meditations = grep { /$IMAGE_FILETYPES/i && -f "${MEDITATION_DIR}/$_" } readdir(MEDITATIONS);
+	closedir(MEDITATIONS);
+	my $meditation_count = scalar @meditations;
+	return("") if (!$meditation_count);
+	my $selection = int(rand($meditation_count));
+	$meditation = "$MEDITATION_DIR/$meditations[$selection]";
+	$meditation = "<IMG SRC=\"${meditation}\" ALT=\"\" CLASS=\"meditation\">\n";
 	return($meditation);
 }
 
 # PAGE TITLE
 # Generate a page title from config, file, site or host context
 sub page_title {
-	my $title = "";
+	my @titles = page_titles();
+	my $title = $titles[0];
+	$title = "<H1><B>${title}</B></H1>\n";
 	return($title);
 }
 
@@ -81,7 +191,7 @@ sub page_title {
 # Assemble page header content including logo, title, meditation, etc.
 sub page_header {
 	my $header = "";
-	$header .= meditate();
+	$header = meditate();
 	$header .= page_title();
 	return("") if (!$header);
 	$header = "<CENTER>\n${header}</CENTER>\n" if ($CENTER_HEADER);
@@ -187,6 +297,7 @@ sub body_fragment {
 
 # RUN FRAGMENT
 # Run executable fragment with exec() in a child process and return the output
+# Runs under Unix only! Script fragments on Windows and others silently fail.
 sub run_fragment {
 	my ($path) = @_;
 	my $output = "";

@@ -1,9 +1,14 @@
 #!/usr/bin/env perl
 ###############################################################################
 # NSI: The New Standard Index       #                                         #
-my $version = '4.0.0.2';            #  A composer engine for simple websites  #
+my $version = '4.0.0.3';            #  A composer engine for simple websites  #
 my $author  = 'ict@nfinit.systems'; #                                         #
 ###############################################################################
+
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
+# Avoid editing this file! Direct changes are easily overwritten by updates,  #
+# all of these variables are configurable externally                          #
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Site configuration
@@ -124,8 +129,7 @@ sub page_titles {
 	$title = $info_title if ($title eq "");
 	$alt   = $info_alt   if ($alt eq "");
 	$alt   = $title if ($alt eq "");
-	$title = $alt   if ($title eq "");
-	$title = $alt = $DEFAULT_PAGE_TITLE if ($title eq "");
+	$alt   = $DEFAULT_PAGE_TITLE if ($alt eq "");
 	return($title, $alt);
 }
 
@@ -133,7 +137,7 @@ sub page_titles {
 # Get META tagged page title
 sub metadata_title {
 	my @titles = page_titles();
-	my $title = @titles[1];
+	my $title = $titles[1];
 	$title = "${title} - ${SITE_TITLE}" if ($SITE_TITLE);
 	$title = "<TITLE>${title}</TITLE>\n";
 	return($title);
@@ -183,6 +187,7 @@ sub meditate {
 sub page_title {
 	my @titles = page_titles();
 	my $title = $titles[0];
+	return("") if (!$title);
 	$title = "<H1><B>${title}</B></H1>\n";
 	return($title);
 }
@@ -191,8 +196,10 @@ sub page_title {
 # Assemble page header content including logo, title, meditation, etc.
 sub page_header {
 	my $header = "";
+	my $title .= page_title();
+	return("") if (!$title);
 	$header = meditate();
-	$header .= page_title();
+	$header .= $title;
 	return("") if (!$header);
 	$header = "<CENTER>\n${header}</CENTER>\n" if ($CENTER_HEADER);
 	$header = "<DIV ID=\"header\">\n${header}</DIV>\n";
@@ -213,7 +220,7 @@ sub page_navigation {
 # RULE
 # Insert a horizontal rule based on configuration
 sub rule {
-	return("") if (!$_NSI_CONTENT || !$AUTO_HR);
+	return("") if (!$AUTO_HR || (!$_NSI_HEADER && !$_NSI_CONTENT));
 	return("<HR CLASS=\"rule\">\n");
 }
 
@@ -349,21 +356,22 @@ $_NSI_PAGE    .= "<HEAD>\n";
 $_NSI_PAGE    .= generate_metadata();
 $_NSI_PAGE    .= "</HEAD>\n";
 $_NSI_PAGE    .= "<BODY>\n";
-$_NSI_CONTENT .= page_header();
-$_NSI_CONTENT .= page_navigation() if ($NAV_POSITION eq "top");
+$_NSI_HEADER   = page_header();
+$_NSI_HEADER  .= page_navigation() if ($NAV_POSITION eq "top");
 $_NSI_CONTENT .= page_intro();
 $_NSI_CONTENT .= table_of_contents() if ($TOC eq "top");
 $_NSI_CONTENT .= page_body();
 $_NSI_CONTENT .= page_links();
 $_NSI_CONTENT .= table_of_contents() if ($TOC eq "bottom");
-$_NSI_CONTENT .= page_navigation() if ($NAV_POSITION eq "bottom");
-$_NSI_CONTENT .= page_footer() if ($_NSI_CONTENT);
-$_NSI_CONTENT  = transform($_NSI_CONTENT) if ($_NSI_CONTENT);
+$_NSI_FOOTER .= page_navigation() if ($NAV_POSITION eq "bottom");
+$_NSI_FOOTER .= page_footer();
 if (!$_NSI_CONTENT) {
 	$_NSI_CONTENT .= "<CENTER>\n";
 	$_NSI_CONTENT .= "<I>This page (un)intentionally left blank</I>\n";
 	$_NSI_CONTENT .= "</CENTER>\n";
 }
+$_NSI_CONTENT  = $_NSI_HEADER . $_NSI_CONTENT . $_NSI_FOOTER;
+$_NSI_CONTENT  = transform($_NSI_CONTENT) if ($_NSI_CONTENT);
 $_NSI_PAGE    .= "<DIV ID=\"content\">\n$_NSI_CONTENT</DIV>\n"; 
 $_NSI_PAGE    .= "</BODY>\n";
 $_NSI_PAGE    .= "</HTML>\n";

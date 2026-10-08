@@ -2,6 +2,8 @@
 docs/*
 
 # Agent steering and testing areas
+CLAUDE.md
+AGENTS.md
 sandbox/*
 archive/*
 AGENTS/*

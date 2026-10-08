@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 ###############################################################################
 # NSI: The New Standard Index       #                                         #
-my $version = '4.0.0.3';            #  A composer engine for simple websites  #
+my $version = '4.0.0.4';            #  A composer engine for simple websites  #
 my $author  = 'ict@nfinit.systems'; #                                         #
 ###############################################################################
 
@@ -14,26 +14,28 @@ my $author  = 'ict@nfinit.systems'; #                                         #
 # Site configuration
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+# System paths
+$SYSTEM_DIR        = "sys";
+$CONFIG_FILE       = "${SYSTEM_DIR}/config"; # Primary config file
+
 ################# FOR NESTED-SITE DEPLOYMENTS:
 $SITE_ROOT = 0; # Configure this to 1 to prevent this page and its children
 ################# from inheriting configuration settings from any NSI parents
 
 # Default special file paths
-$SYSTEM_DIR        = "sys";
-$CONFIG_FILE       = "${SYSTEM_DIR}/config"; # Primary config file
-$INFO_FILE         = "info"; # Page info file for title, TOC and description
-$RESOURCE_DIR      = "res"; # icons, styles and other page cosmetics
-$FAVICON_FILE      = "${RESOURCE_DIR}/favicon.ico";
-$LOGO_FILE         = "${RESOURCE_DIR}/logo"; # NSI detects extension
-$MEDITATION_DIR    = "${RESOURCE_DIR}/meditations";
-$STYLE_DIR         = "${RESOURCE_DIR}/style"; # Linked CSS stylesheets
-$LEGACY_STYLE_DIR  = "${STYLE_DIR}/legacy"; # Direct-injected legacy CSS
-$SCRIPT_DIR        = "${RESOURCE_DIR}/scripts"; # Linked client scripts
-$LEGACY_SCRIPT_DIR = "${SCRIPT_DIR}/legacy"; # Direct-injected legacy scripts
-$IMAGE_DIR         = "img";
-$INTRO_FILE        = "intro.html";
-$BODY_FILE         = "body.html"; # single-file body, displays before fragments
-$BODY_DIR          = "body";     # fragmented body files and executables
+$INFO_FILE         = 'info'; # Page info file for title, TOC and description
+$RESOURCE_DIR      = 'res'; # icons, styles and other page cosmetics
+$FAVICON_FILE      = '${RESOURCE_DIR}/favicon.ico';
+$LOGO_FILE         = '${RESOURCE_DIR}/logo'; # NSI detects extension
+$MEDITATION_DIR    = '${RESOURCE_DIR}/meditations';
+$STYLE_DIR         = '${RESOURCE_DIR}/style'; # Linked CSS stylesheets
+$LEGACY_STYLE_DIR  = '${STYLE_DIR}/legacy'; # Direct-injected legacy CSS
+$SCRIPT_DIR        = '${RESOURCE_DIR}/scripts'; # Linked client scripts
+$LEGACY_SCRIPT_DIR = '${SCRIPT_DIR}/legacy'; # Direct-injected legacy scripts
+$IMAGE_DIR         = 'img';
+$INTRO_FILE        = 'intro.html';
+$BODY_FILE         = 'body.html'; # single-file body, displays before fragments
+$BODY_DIR          = 'body';     # fragmented body files and executables
 
 # HTML 4.01 transitional DOCTYPE assists newer browsers with legacy syntax
 $HTML_DOCTYPE    = "HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\"";
@@ -63,6 +65,9 @@ $IMAGE_FILETYPES    = '\.(gif|jpe?g|png)$';
 # Universal helpers
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+# Keys a page only takes from its own config, never from a parent's
+%LOCAL_KEYS = (SITE_ROOT => 1, PAGE_TITLE => 1, ALT_PAGE_TITLE => 1);
+
 # PLAIN TEXT
 # Strip tags and escape HTML for use in <TITLE> and attribute values
 sub plain_text {
@@ -78,12 +83,159 @@ sub plain_text {
 	return($text);
 }
 
+# PARENT DIRECTORY
+# Trim the last component from a path as text (never follows symlinks)
+# Example: parent_dir("/www/page") returns "/www"
+sub parent_dir {
+	my ($dir) = @_;
+	$dir =~ s/\/[^\/]*$//;
+	$dir = "/" if ($dir eq "");
+	return($dir);
+}
+
+# WEB ROOT
+# The directory that serves this request's URL root: strip the path
+# components that SCRIPT_NAME and SCRIPT_FILENAME have in common
+sub web_root {
+	my ($file, $url) = @_;
+	my @file = split(/\//, $file);
+	my @url  = split(/\//, $url);
+	pop(@file); pop(@url); # drop the script name from both
+	while (@url && @file && $url[-1] eq $file[-1]) {
+		pop(@url); pop(@file);
+	}
+	return(join("/", @file) || "/");
+}
+
+# SITE ROOT AT
+# Does the config in this directory set SITE_ROOT? (read before any
+# config is applied, so it can't come from a parent)
+sub site_root_at {
+	my ($dir) = @_;
+	my $site_root = 0;
+	open(PEEK, "${dir}/${CONFIG_FILE}") or return(0);
+	while (<PEEK>) {
+		$site_root = $1 if (/^\s*site_root\s*=\s*(.*?)\s*$/i);
+	}
+	close(PEEK);
+	return($site_root ? 1 : 0);
+}
+
+# BUILD CHAIN
+# Directories this page inherits from, nearest first. Inside the web root,
+# directories without NSI files are passed through; beyond it, the chain
+# only continues through NSI pages. SITE_ROOT=1 ends it anywhere.
+sub build_chain {
+	my @chain = ();
+	my $dir = $_NSI_PAGE_DIR;
+	my $past_web_root = 0;
+	while (1) {
+		push(@chain, $dir);
+		last if (site_root_at($dir));
+		$past_web_root = 1 if ($dir eq $_NSI_WEB_ROOT);
+		my $parent = parent_dir($dir);
+		last if ($parent eq $dir);
+		# Check for NSI engine files beyond the web root, to allow
+		# resourcing to work for pages with vanity subdomains
+		last if ($past_web_root && ! -f "${parent}/${_NSI_SCRIPT}");
+		$dir = $parent;
+	}
+	return(@chain);
+}
+
 # CRAWL
-# Locate parent resources in nested pages. Returns an array of every matching
-# path until the pattern is broken. SERVER SIDE ONLY
+# Look for identical copies of a file or directory along the page's chain
+# Nearest/local files first
 sub crawl {
+	my ($path) = @_;
 	my @hits = ();
+	foreach my $dir (@_NSI_CHAIN) {
+		my $hit = ($dir eq "/") ? "/${path}" : "${dir}/${path}";
+		push(@hits, $hit) if (-e $hit);
+	}
 	return(@hits);
+}
+
+# URL FOR
+# Get a relative URL for a path based on the page chain, returns nothing
+# if the resource is beyond the web root
+sub url_for {
+	my ($path) = @_;
+	for (my $i = 0; $i <= $#_NSI_CHAIN; $i++) {
+		my $dir = $_NSI_CHAIN[$i];
+		next if (index($path, "${dir}/") != 0);
+		return("") if ($i > $_NSI_WEB_ROOT_STEP);
+		return(("../" x $i) . substr($path, length($dir) + 1));
+	}
+	return("");
+}
+
+# READ CONFIG
+# Override existing defaults from a KEY=VALUE file. Keys are the names of
+# the variables they set, in any case; unknown keys are ignored. Keys in
+# %LOCAL_KEYS are only taken from the page's own config.
+sub read_config {
+	my ($path) = @_;
+	my $local = ($path eq "${_NSI_PAGE_DIR}/${CONFIG_FILE}"); # page's own config
+	open(CONFIG, $path) or return;
+	while (<CONFIG>) {
+		next if (/^\s*(#|$)/);
+		next if (!/^\s*([A-Za-z][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+		my ($key, $value) = (uc($1), $2);
+		next if ($key eq "SYSTEM_DIR" || $key eq "CONFIG_FILE");
+		next if (!$local && $LOCAL_KEYS{$key});
+		next if (!defined(${"main::${key}"}));
+		${"main::${key}"} = $value;
+	}
+	close(CONFIG);
+}
+
+# EXPAND SETTINGS
+# Fill in ${NAME} placeholders in settings once all configs are applied.
+# Repeats so placeholders built on other placeholders resolve too.
+sub expand_settings {
+	foreach my $key (keys %main::) {
+		next if ($key !~ /^[A-Z][A-Z0-9_]*$/);
+		next if (!defined(${"main::${key}"}));
+		for (my $pass = 0; $pass < 5; $pass++) {
+			last if (${"main::${key}"} !~ s/\$\{([A-Z][A-Z0-9_]*)\}/defined(${"main::$1"}) ? ${"main::$1"} : "\${$1}"/ge);
+		}
+	}
+}
+
+# CONFIGURE PAGE
+# Apply every config on the chain, top first, so the nearest one wins,
+# then fill in ${NAME} placeholders
+sub configure_page {
+	foreach my $config (reverse(crawl($CONFIG_FILE))) {
+		read_config($config);
+	}
+	expand_settings();
+}
+
+# RESOLVE RUNTIME
+# Resolves the runtime environment of the current engine
+sub resolve_runtime {
+	my $file = $ENV{SCRIPT_FILENAME} || "";
+	my $url  = $ENV{SCRIPT_NAME} || "";
+	if ($file =~ /^\// && $url) {
+		($_NSI_SCRIPT = $file) =~ s/^.*\///;
+		$_NSI_PAGE_DIR = parent_dir($file);
+		$_NSI_WEB_ROOT = web_root($file, $url);
+	} else {
+		# Not under a web server: this directory only (v1 mode)
+		$_NSI_SCRIPT   = "index.cgi";
+		$_NSI_PAGE_DIR = ".";
+		$_NSI_WEB_ROOT = ".";
+	}
+	@_NSI_CHAIN = build_chain();
+	$_NSI_WEB_ROOT_STEP = $#_NSI_CHAIN;
+	for (my $i = 0; $i <= $#_NSI_CHAIN; $i++) {
+		if ($_NSI_CHAIN[$i] eq $_NSI_WEB_ROOT) {
+			$_NSI_WEB_ROOT_STEP = $i;
+			last;
+		}
+	}
 }
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -147,6 +299,9 @@ sub metadata_title {
 # Link and package page styles from resource directory
 sub metadata_style {
 	my $style = "";
+	# Legacy stylesheet inlining
+	# Check for legacy stylesheet in configured directory
+	# If it does not exist, crawl up the tree
 	return($style);
 }
 
@@ -346,6 +501,9 @@ sub page_footer {
 }
 
 # BEGIN PAGE GENERATION #######################################################
+resolve_runtime();
+configure_page();
+# -----------------------------------------------------------------------------
 $_NSI_CONTENT = "";
 $_NSI_PAGE    = "Content-type: text/html\n\n";
 # -----------------------------------------------------------------------------

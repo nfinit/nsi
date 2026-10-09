@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 ###############################################################################
 # NSI: The New Standard Index       #                                         #
-my $version = '4.0.0.11';           #  A composer engine for simple websites  #
+my $version = '4.0.0.12';           #  A composer engine for simple websites  #
 my $author  = 'ict@nfinit.systems'; #                                         #
 ###############################################################################
 
@@ -35,7 +35,8 @@ $LEGACY_SCRIPT_DIR = '${SCRIPT_DIR}/legacy'; # Direct-injected legacy scripts
 $IMAGE_DIR         = 'img';
 $INTRO_FILE        = 'intro.html';
 $BODY_FILE         = 'body.html'; # single-file body, displays before fragments
-$BODY_DIR          = 'body';     # fragmented body files and executables
+$BODY_DIR          = 'body';      # fragmented body files and executables
+$LINKS_FILE        = 'links';     # links to external websites
 
 # HTML 4.01 transitional DOCTYPE assists newer browsers with legacy syntax
 $HTML_DOCTYPE    = "HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\"";
@@ -65,6 +66,8 @@ $NAV_POSITION       = "top";
 $TOC                = "bottom";
 $TOC_TITLE          = "";
 $TOC_SUBTITLE       = "";
+$LINKS_TITLE        = "";
+$LINKS_SUBTITLE     = "";
 $CENTER_HEADER      = 0;
 $WRAP_SCRIPT_OUTPUT = 0; # Wrap executable fragments output in <PRE> tags
 $IMAGE_FILETYPES    = '\.(gif|jpe?g|png)$';
@@ -627,12 +630,44 @@ sub table_of_contents {
 	return($toc);
 }
 
+# LINK ENTRIES
+# Entries from this page's links file, in file order. Entries are blocks
+# separated by blank lines: a label, a URL, then an optional description.
+# Each entry is [label, url, description]; blocks without a URL are skipped.
+sub link_entries {
+	my @entries = ();
+	my $text = read_file($LINKS_FILE);
+	$text =~ s/\r//g;
+	foreach my $block (split(/\n[ \t]*\n/, $text)) {
+		my @lines = grep { /\S/ } split(/\n/, $block);
+		next if (@lines < 2);
+		my ($label, $url, @description) = @lines;
+		s/^\s+//, s/\s+$// foreach ($label, $url);
+		next if ($url =~ /\s/); # line 2 is a sentence, not a URL
+		push(@entries, [$label, $url, join("\n", @description)]);
+	}
+	return(@entries);
+}
+
 # PAGE LINKS
-# Assemble a config-specified list of links to external sites and resources
+# Generate a list of links to external resources from a configured file 
 sub page_links {
-	my $links =  "";
+	my $links = "";
+	foreach my $entry (link_entries()) {
+		my ($label, $url, $description) = @$entry;
+		$url =~ s/"/%22/g;
+		my $item = "<H3><A HREF=\"${url}\">${label}</A></H3>\n";
+		$item .= "<P>${description}</P>\n" if ($description ne "");
+		$links .= "<LI>\n${item}</LI>\n";
+	}
+	return("") if (!$links);
+	$links = "<UL>\n${links}</UL>\n";
+	$links = "<P ID=\"links_subtitle\">${LINKS_SUBTITLE}</P>\n${links}" if ($LINKS_SUBTITLE);
+	$links = "<H2>${LINKS_TITLE}</H2>\n${links}" if ($LINKS_TITLE);
+	$links = rule() . "<DIV ID=\"links\">\n${links}</DIV>\n";
 	return($links);
 }
+
 
 # TRANSFORM
 # Apply special transformations to tags and other objects

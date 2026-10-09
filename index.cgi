@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 ###############################################################################
 # NSI: The New Standard Index       #                                         #
-my $version = '4.0.0.12';           #  A composer engine for simple websites  #
+my $version = '4.0.0.13';           #  A composer engine for simple websites  #
 my $author  = 'ict@nfinit.systems'; #                                         #
 ###############################################################################
 
@@ -37,6 +37,7 @@ $INTRO_FILE        = 'intro.html';
 $BODY_FILE         = 'body.html'; # single-file body, displays before fragments
 $BODY_DIR          = 'body';      # fragmented body files and executables
 $LINKS_FILE        = 'links';     # links to external websites
+$GROUPS_FILE       = 'groups'; # Use this file to group/annotate items in a TOC
 
 # HTML 4.01 transitional DOCTYPE assists newer browsers with legacy syntax
 $HTML_DOCTYPE    = "HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\"";
@@ -592,12 +593,37 @@ sub page_intro {
 	return($intro);
 }
 
+# GROUP BLOCKS
+# Groups declared in a directory's groups file, in file order. Blocks are
+# separated by blank lines: an optional heading, optional description lines,
+# then member directories, written with a trailing "/". A block that starts
+# with a member has no heading (it only fixes the order). Each group is
+# [heading, description, member, member, ...].
+sub group_blocks {
+	my ($dir) = @_;
+	my @groups = ();
+	my $text = read_file("${dir}/${GROUPS_FILE}");
+	$text =~ s/\r//g;
+	foreach my $block (split(/\n[ \t]*\n/, $text)) {
+		my @lines = grep { /\S/ } split(/\n/, $block);
+		s/^\s+//, s/\s+$// foreach (@lines);
+		next if (!@lines);
+		my $heading = ($lines[0] =~ /\/$/) ? "" : shift(@lines);
+		my @members = map { substr($_, 0, -1) } grep { /\/$/ } @lines;
+		my $description = join("\n", grep { !/\/$/ } @lines);
+		push(@groups, [$heading, $description, @members]);
+	}
+	return(@groups);
+}
+
 # TOC ENTRIES
-# Gather an array of subdirectories with valid .info files
-# Returns entries with name, short name and description
+# Child directories of a directory that have an info file: first those
+# declared in its groups file, in that order, then the rest sorted by short
+# name. Each entry is [name, short name, description, group heading,
+# group description, group number]; undeclared entries are group 0.
 sub toc_entries {
 	my ($dir) = @_;
-	my @entries = ();
+	my (%found, @entries);
 	opendir(CHILDREN, $dir) or return(@entries);
 	my @names = grep { !/^\./ && -d "${dir}/$_" } readdir(CHILDREN);
 	closedir(CHILDREN);
@@ -606,28 +632,61 @@ sub toc_entries {
 		next if (! -f $info);
 		my ($title, $alt, $description) = info($info);
 		next if ($alt eq "");
-		push(@entries, [$name, $alt, $description]);
+		$found{$name} = [$name, $alt, $description];
 	}
-	@entries = sort { lc($$a[1]) cmp lc($$b[1]) } @entries;
+	my $number = 0;
+	foreach my $group (group_blocks($dir)) {
+		my ($heading, $description, @members) = @$group;
+		$number++;
+		foreach my $member (@members) {
+			next if (!$found{$member});
+			push(@entries, [@{$found{$member}}, $heading, $description, $number]);
+			delete($found{$member});
+		}
+	}
+	foreach my $entry (sort { lc($$a[1]) cmp lc($$b[1]) } values(%found)) {
+		push(@entries, [@$entry, "", "", 0]);
+	}
 	return(@entries);
 }
 
 # TABLE OF CONTENTS
-# Build a site table of contents to child directories from metadata files 
+# List this page's child pages, with a heading and description above each
+# declared group
 sub table_of_contents {
-	my $toc = "";
-	foreach my $entry (toc_entries($_NSI_PAGE_DIR)) {
-		my ($name, $alt, $description) = @$entry;
-		my $item = "<H3><A HREF=\"" . url_path($name) . "/\">${alt}</A></H3>\n";
-		$item .= "<P>${description}</P>\n" if ($description ne "");
-		$toc .= "<LI>\n${item}</LI>\n";
+	my ($toc, $list, $key, $heading, $description) = ("", "", "");
+	foreach my $entry (toc_entries($_NSI_PAGE_DIR), undef) {
+		my $next_key = "";
+		if ($entry) {
+			my ($name, $alt, $about, $group_heading, $group_description, $number) = @$entry;
+			$next_key = ($group_heading ne "") ? $number : "plain";
+			if ($next_key ne $key) {
+				$toc .= toc_group($heading, $description, $list);
+				($list, $key, $heading, $description) = ("", $next_key, $group_heading, $group_description);
+			}
+			my $item = "<H3><A HREF=\"" . url_path($name) . "/\">${alt}</A></H3>\n";
+			$item .= "<P>${about}</P>\n" if ($about ne "");
+			$list .= "<LI>\n${item}</LI>\n";
+		} else {
+			$toc .= toc_group($heading, $description, $list);
+		}
 	}
 	return("") if (!$toc);
-	$toc = "<UL>\n${toc}</UL>\n";
 	$toc = "<P ID=\"toc_subtitle\">${TOC_SUBTITLE}</P>\n${toc}" if ($TOC_SUBTITLE);
 	$toc = "<H2>${TOC_TITLE}</H2>\n${toc}" if ($TOC_TITLE);
 	$toc = rule() . "<DIV ID=\"toc\">\n${toc}</DIV>\n";
 	return($toc);
+}
+
+# TOC GROUP
+# One run of TOC items: a plain list, or a headed group with its description
+sub toc_group {
+	my ($heading, $description, $list) = @_;
+	return("") if ($list eq "");
+	$list = "<UL>\n${list}</UL>\n";
+	return($list) if ($heading eq "");
+	$list = "<P CLASS=\"group_description\">${description}</P>\n${list}" if ($description ne "");
+	return("<DIV CLASS=\"toc_group\">\n<H2>${heading}</H2>\n${list}</DIV>\n");
 }
 
 # LINK ENTRIES

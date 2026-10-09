@@ -13,8 +13,8 @@
 
 # Site identity: <TITLE> suffix and footer
 SITE_TITLE=NSI Development Repository
-ORG_NAME=NFINIT labs
-ORG_URL=http://labs.nfinit.systems/
+ORG_NAME=NFINIT systems
+ORG_URL=http://nfinit.systems/
 COPYRIGHT_BEGIN=2022
 
 # Optional settings, shown with their defaults

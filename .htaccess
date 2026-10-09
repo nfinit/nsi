@@ -1,0 +1,9 @@
+# NSI: deny private paths at any depth: sys/ (configuration), body/ (page
+# fragments, which may be executable) and .ht* files such as this one.
+#
+# Apache only. Needs mod_rewrite, "Options FollowSymLinks" and
+# "AllowOverride FileInfo" for the site's directory in httpd.conf.
+# lighttpd ignores this file; deny the same paths in its configuration.
+RewriteEngine On
+RewriteRule (^|/)(sys|body)(/|$) - [F]
+RewriteRule (^|/)\.ht - [F]

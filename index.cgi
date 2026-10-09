@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 ###############################################################################
 # NSI: The New Standard Index       #                                         #
-my $version = '4.0.0.10';           #  A composer engine for simple websites  #
+my $version = '4.0.0.11';           #  A composer engine for simple websites  #
 my $author  = 'ict@nfinit.systems'; #                                         #
 ###############################################################################
 
@@ -116,6 +116,7 @@ sub directory_files {
 # READ FILE
 # Whole contents of a file, or "" if it can't be read
 sub read_file {
+	local $_;
 	my ($path) = @_;
 	my $text = "";
 	open(FILE, $path) or return($text);
@@ -152,6 +153,7 @@ sub web_root {
 # Is a yes/no setting turned on in one directory's own config? Used for
 # per-directory markers (SITE_ROOT, NAV_ROOT) that are never inherited.
 sub config_flag_at {
+	local $_;
 	my ($dir, $key) = @_;
 	my $flag = 0;
 	open(PEEK, "${dir}/${CONFIG_FILE}") or return(0);
@@ -226,6 +228,7 @@ sub url_path {
 # the variables they set, in any case; unknown keys are ignored. Keys in
 # %LOCAL_KEYS are only taken from the page's own config.
 sub read_config {
+	local $_;
 	my ($path) = @_;
 	my $local = ($path eq "${_NSI_PAGE_DIR}/${CONFIG_FILE}"); # page's own config
 	open(CONFIG, $path) or return;
@@ -297,6 +300,7 @@ sub resolve_runtime {
 # Targeted 'info' metadata file parser
 # Returns an array of three elements (title, alt, description)
 sub info {
+	local $_;
 	my ($path) = @_;
 	my @header = ();
 	my @description = ();
@@ -364,6 +368,7 @@ sub metadata_style {
 		$css .= "\n" if ($css ne "" && $css !~ /\n$/);
 		$style .= $css;
 	}
+	# Wrap in an HTML comment tag to prevent spillover on very old browsers
 	$style = "<STYLE TYPE=\"text/css\"><!--\n${style}//--></STYLE>\n" if ($style);
 	# Print rule: hide navigation and other no_print elements on paper
 	$style .= "<STYLE TYPE=\"text/css\" MEDIA=\"print\"><!--\n.no_print { display: none; }\n//--></STYLE>\n";
@@ -381,6 +386,38 @@ sub metadata_style {
 	return($style);
 }
 
+# METADATA SCRIPTS
+# Link and package client scripts from resource directory
+sub metadata_scripts {
+	my $scripts = "";
+	# Legacy script inlining
+	my ($script_dir, @files);
+	foreach my $candidate (crawl($LEGACY_SCRIPT_DIR)) {
+		@files = directory_files($candidate, '\.js$');
+		$script_dir = $candidate, last if (@files);
+	}
+	# Concatenate legacy scripts into one block
+	foreach my $script (@files) {
+		my $fragment = read_file("${script_dir}/${script}");
+		$fragment .= "\n" if ($fragment ne "" && $fragment !~ /\n$/);
+		$scripts .= $fragment;
+	}
+	# Wrap in an HTML comment tag to prevent spillover on very old browsers
+	$scripts = "<SCRIPT TYPE=\"text/javascript\" LANGUAGE=\"JavaScript\"><!--\n${scripts}//--></SCRIPT>\n"
+		if ($scripts);
+	# Script linking
+	($script_dir, @files) = ("");
+	foreach my $candidate (crawl($SCRIPT_DIR)) {
+		@files = directory_files($candidate, '\.js$');
+		$script_dir = $candidate, last if (@files);
+	}
+	foreach my $script (@files) {
+		my $link = url_for("${script_dir}/${script}");
+		next if ($link eq ""); # above the web root	
+		$scripts .= "<SCRIPT TYPE=\"text/javascript\" LANGUAGE=\"JavaScript\" SRC=\"${link}\"></SCRIPT>\n";
+	}
+	return($scripts);
+}
 # GENERATE METADATA
 # Generate site <head> data from configuration
 sub generate_metadata {
@@ -402,6 +439,7 @@ sub generate_metadata {
 	}
 	$metadata .= metadata_title();
 	$metadata .= metadata_style();
+	$metadata .= metadata_scripts();
 	return($metadata);
 }
 
@@ -457,7 +495,7 @@ sub page_logo {
 # Assemble page header content including logo, title, meditation, etc.
 sub page_header {
 	my $header = "";
-	my $title .= page_title();
+	my $title = page_title();
 	return("") if (!$title);
 	my $logo = page_logo();
 	$title = "<TABLE><TR>\n<TD>${logo}</TD>\n<TD>${title}</TD>\n</TR></TABLE>\n" if ($logo);
@@ -498,7 +536,7 @@ sub nav_bar {
 		push(@items, $item);
 	}
 	return("") if (@items < 2); # no sections to display
-	return("<DIV CLASS=\"nav_bar\">" . join(" | ", @items) . "</DIV>\n");
+	return("<DIV>" . join(" | ", @items) . "</DIV>\n");
 } 
 
 # PAGE ROOT NAVIGATION
@@ -522,7 +560,7 @@ sub page_navigation {
 		if ($NAV_BARS eq "root" || ($NAV_BARS eq "both" && nav_root_step() != $_NSI_WEB_ROOT_STEP));
 	$navigation .= page_local_navigation() if ($NAV_BARS eq "local" || $NAV_BARS eq "both");
 	return("") if (!$navigation);
-	$navigation = rule("no_print") . "<DIV ID=\"navigation\" CLASS=\"no_print\">\n${navigation}</DIV>\n";
+	$navigation = "<DIV ID=\"navigation\" CLASS=\"no_print\">\n" . rule() . "${navigation}</DIV>\n";
 	return($navigation);
 }
 
@@ -533,15 +571,14 @@ sub page_navigation {
 # RULE
 # Insert a horizontal rule based on configuration
 sub rule {
-	my ($class) = @_;
 	return("") if (!$AUTO_HR || (!$_NSI_HEADER && !$_NSI_CONTENT));
-	$class = $class ? "rule ${class}" : "rule";
-	return("<HR CLASS=\"${class}\">\n");
+	return("<HR CLASS=\"rule\">\n");
 }
 
 # PAGE INTRO
 # Display a configured HTML snippet above all non-header special elements
 sub page_intro {
+	local $_;
 	my $intro = "";
 	if (-f $INTRO_FILE && open(INTRO, $INTRO_FILE)) {
 		$intro .= $_ while (<INTRO>);
@@ -580,12 +617,12 @@ sub table_of_contents {
 		my ($name, $alt, $description) = @$entry;
 		my $item = "<H3><A HREF=\"" . url_path($name) . "/\">${alt}</A></H3>\n";
 		$item .= "<P>${description}</P>\n" if ($description ne "");
-		$toc .= "<LI class=\"toc_item\">\n${item}</LI>\n";
+		$toc .= "<LI>\n${item}</LI>\n";
 	}
 	return("") if (!$toc);
-	$toc = "<UL id=\"toc_list\">\n${toc}</UL>";
-	$toc = "<P id=\"toc_subtitle\">${TOC_SUBTITLE}</P>\n${toc}" if ($TOC_SUBTITLE);
-	$toc = "<H2 id=\"toc_subtitle\">${TOC_TITLE}</H2>\n${toc}" if ($TOC_TITLE);
+	$toc = "<UL>\n${toc}</UL>\n";
+	$toc = "<P ID=\"toc_subtitle\">${TOC_SUBTITLE}</P>\n${toc}" if ($TOC_SUBTITLE);
+	$toc = "<H2>${TOC_TITLE}</H2>\n${toc}" if ($TOC_TITLE);
 	$toc = rule() . "<DIV ID=\"toc\">\n${toc}</DIV>\n";
 	return($toc);
 }
@@ -621,6 +658,7 @@ sub body_fragments {
 # BODY FRAGMENT
 # Parse body fragment, determine if executable
 sub body_fragment {
+	local $_;
 	my ($name) = @_;
 	my $path = "${BODY_DIR}/${name}";
 	my $fragment = "";
@@ -645,7 +683,7 @@ sub body_fragment {
 	}
 	$fragment = run_fragment($path);
 	return("") if (!$fragment);
-	$fragment = "<PRE>\n${fragment}</PRE>\n" if ($wrap);
+	$fragment = "<PRE CLASS=\"script_output\">\n${fragment}</PRE>\n" if ($wrap);
 	$fragment = "<H2>${title}</H2>\n${fragment}" if ($title);
 	return $fragment;
 }
@@ -654,6 +692,7 @@ sub body_fragment {
 # Run executable fragment with exec() in a child process and return the output
 # Runs under Unix only! Script fragments on Windows and others silently fail.
 sub run_fragment {
+	local $_;
 	my ($path) = @_;
 	my $output = "";
 	my $pid = open(SCRIPT,"-|");
@@ -667,6 +706,7 @@ sub run_fragment {
 # PAGE BODY
 # Render page body from supplied elements
 sub page_body {
+	local $_;
 	my $body = "";
 	# Standalone body file is always displayed first if present
 	if (-f $BODY_FILE && open(BODY, $BODY_FILE)) {
@@ -705,7 +745,7 @@ sub footer_navigation {
 		$alt = "Home" if ($alt eq "");
 		push(@links, "<A HREF=\"" . ("../" x $home) . "\">${alt}</A>");
 	}
-	return("<SPAN CLASS=\"footer_navigation no_print\">" . join(" | ", @links) . "</SPAN>");
+	return("<SPAN CLASS=\"no_print\">" . join(" | ", @links) . "</SPAN>");
 }
 
 # PAGE FOOTER
@@ -727,7 +767,7 @@ sub page_footer {
 	}
 	my $right = footer_navigation();
 	my $footer = "<TR>\n<TD ALIGN=\"LEFT\">${left}</TD>\n<TD ALIGN=\"RIGHT\">${right}</TD>\n</TR>\n";
-	$footer = "<TABLE WIDTH=\"100%\" CLASS=\"footer\">\n${footer}</TABLE>\n";
+	$footer = "<TABLE WIDTH=\"100%\">\n${footer}</TABLE>\n";
 	$footer = rule() . "<DIV ID=\"footer\">\n${footer}</DIV>\n";
 	return($footer);
 }

@@ -4,7 +4,7 @@ body { padding: 1vw; }
 
 .meditation { width: 75%; max-width: 600px; }
 
-.script-output { 
+.script_output { 
   font-size: 1.8vw; 
   padding: 1vw;
 } 
@@ -13,6 +13,6 @@ body { padding: 1vw; }
 
 @media screen and (min-width: 800px) 
 { 
-	.script-output { font-size: 14px; } 
+	.script_output { font-size: 14px; } 
 }
 

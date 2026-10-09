@@ -1,0 +1,36 @@
+<h2>Prepare your server</h2>
+<i>Jump to:</i>
+<a href="#apache">Configuring Apache</a>,
+<a href="#lighttpd">Lighttpd</a>,
+<a href="#others">nginx and others</a>
+<p>
+Every website needs a server to host it, and
+the NSI engine is implemented as a <b>Perl CGI script</b> - 
+once the gold standard of the server-side dynamic web, which means 
+it can run on just about <i>anything</i>.
+</p>
+<p>There are, however, some caveats to consider:</p>
+<ul>
+<li><b>Most web servers out of the box don't execute CGI just
+anywhere.</b> Older servers especially relegate dynamic
+scripts to special areas like <tt>cgi-bin/</tt>. Like modern PHP,
+Python, JavaScript and other web frameworks, you might need some
+one-time configuration before deploying NSI.</li>
+<li><b>Some web servers don't execute CGI at all.</b> CGI was <i>once</i>
+the gold standard, but some popular modern web servers,
+particularly nginx and Caddy, have since dropped official support,
+though you can bring it back with a wrapper like <tt>fcgiwrap</tt>.
+We recommend Apache or Lighttpd.</li> 
+<li><b>NSI is tailored to POSIX</b>, or Unix-like environments. It's likely
+the engine will run on Windows or other platforms, but it hasn't been tested,
+and a number of features (especially executable script fragments) are likely
+to break without adaptation. Expect full advertised functionality only under
+systems like Linux, macOS or real Unix.</li>
+<li><b>If you're deploying NSI to an especially old target:</b> this
+engine has thus far been tested as far back as Perl 5.005_03,
+released in 1999. It might work fine on older versions... or it
+might not.</li>
+</ul>
+<p>
+If, like us, you've accepted the hurdles of CGI in the 21st century, read on...
+</p>

@@ -1,0 +1,23 @@
+<a name="others"></a>
+<h3>Configuring nginx and other servers</h3>
+<p>
+As noted in the caveats above, nginx and some other popular modern web servers
+no longer support CGI at all... out of the box. For servers like these, you'll
+need to use a <b>wrapper</b>. Instructions here are minimal, as we have not
+tested this, but this sample <tt>nginx.conf</tt> using <tt>fcgiwrap</tt>
+should work, placed inside of your <tt>server { }</tt> block in place of the
+existing <tt>location /</tt> entry:
+</p>
+<pre>
+location ~ (^|/)(sys|body)(/|$) { return 403; }
+location ~ (^|/)\.              { return 403; }
+location / { index index.html index.cgi; }
+location ~ \.cgi$ {
+    include fastcgi_params;
+    fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    fastcgi_pass unix:/run/fcgiwrap.socket;
+}
+</pre>
+<p>
+Keep in mind that the path <tt>/run/fcgiwrap.socket</tt> can vary by distribution.
+</p>

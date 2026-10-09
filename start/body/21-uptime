@@ -1,0 +1,8 @@
+#!/usr/bin/env sh
+# title="Live system status" 
+uptime
+####################################################################
+#              IF YOU SAW THIS AS SOURCE CODE,                     #
+# YOUR SERVER IS MISCONFIGURED OR CAN'T EXECUTE SCRIPTS WITH PERL! #
+#  EXECUTABLE FRAGMENTS ARE NOT SUPPORTED ON WINDOWS DEPLOYMENTS.  #
+####################################################################

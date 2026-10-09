@@ -1,0 +1,31 @@
+<a name="lighttpd"></a>
+<h3>Configuring Lighttpd</h3>
+<p>
+If Apache is too heavy for you or you don't need all of its features, 
+<a href="https://www.lighttpd.net">Lighttpd</a> is an excellent modern
+alternative, and generally our server of choice.
+</p>
+<p>
+Like Apache, running NSI on Lighttpd requires optional modules that are still
+typically bundled in most packages: <tt>mod_access</tt> and <tt>mod_cgi</tt>.
+<tt>mod_cgi</tt> is often not enabled by default, so you'll likely need to uncomment or 
+add it to your <tt>lighttpd.conf</tt> file.
+</p>
+<p>
+Unlike Apache, Lighttpd doesn't support local configuration files like <tt>.htaccess</tt>,
+so you'll need to configure the server in <tt>lighttpd.conf</tt>:
+</p>
+<pre>
+server.modules += ( "mod_access", "mod_cgi" )
+cgi.assign = ( ".cgi" =&gt; "" )
+index-file.names += ( "index.cgi" )
+$HTTP["url"] =~ "(^|/)(sys|body)(/|$)|(^|/)\." {
+    url.access-deny = ( "" )
+}
+</pre>
+<p>
+If your <tt>lighttpd.conf</tt> already has a <tt>cgi.assign</tt> line present,
+add <tt>".cgi" ==&gt; ""</tt> to it instead of adding a second line.
+<p>
+Once these changes are applied, restart Lighttpd to re-load the configuration.
+</p>

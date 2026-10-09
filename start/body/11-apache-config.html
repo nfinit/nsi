@@ -1,0 +1,46 @@
+<a name="apache"></a>
+<h3>Configuring Apache</h3>
+<p>
+<a href="https://httpd.apache.org">Apache HTTP Server</a> has long been among
+the world's most popular web servers, with a rich feature set, good multiplatform
+support and ready availability. It's often pre-installed on modern Linux and
+Unix systems, and NSI has been developed and tested on both Apache 1.x and 2.x.
+Apache can be heavy compared to other servers, but its flexibility and powerful
+configuration makes us recommend it, especially if you aren't sure what to pick.
+</p>
+<p>
+Running NSI on Apache requires both <tt>mod_cgi</tt> and <tt>mod_rewrite</tt>
+to be installed and available. These are often included in Apache packages, but 
+rarely enabled. You will likely need to enable them in your Apache configuration
+file (<tt>httpd.conf</tt> or <tt>apache2.conf</tt>) or, on Ubuntu and other
+Debian family Linux distributions, with the <tt>a2enmod</tt> command:
+</p>
+<pre>a2enmod cgi rewrite</pre>
+<p>
+Once you've verified you have the required modules installed and enabled, you'll
+need to verify Apache's configuration supports CGI execution. If you're
+setting up NSI on a shared host or other server with <tt>AllowOverride All</tt>
+configured, you can simply add these lines to the top of NSI's 
+bundled <tt>.htaccess</tt> file:
+<pre>
+Options +ExecCGI
+AddHandler cgi-script .cgi
+DirectoryIndex index.html index.cgi
+</pre>
+<p>
+Alternately, you'll need to edit your Apache server configuration file, for
+example if your website is in the directory <tt>/var/www/html</tt>, you can
+configure it for NSI with this: 
+</p>
+<pre>
+&lt;Directory "/var/www/html"&gt;
+    Options +ExecCGI
+    AllowOverride FileInfo
+    AddHandler cgi-script .cgi
+    DirectoryIndex index.html index.cgi
+&lt;/Directory&gt;
+</pre>
+<p>
+Once you've applied your changes, you'll need to restart Apache to reload its
+configuration.
+</p>

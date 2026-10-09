@@ -1,0 +1,158 @@
+<a name="start"></a>
+<h2>Build your first page</h2>
+<p>
+The NSI demo site serves as a way to test and exercise most of the engine's
+core features to ensure your configuration went smoothly. Once everything is
+in order, blow the pre-loaded content away with:
+</p>
+<pre>
+rm -rf start info intro.html res/logo.gif res/favicon.ico .gitignore README.md
+</pre>
+<p>
+We recommend you leave the <tt>.git</tt> directory on your site, to allow
+for easy updates to <tt>index.cgi</tt> by pulling from GitHub. If you choose
+this route, be sure to set up a local Git branch before you start working:
+</p>
+<pre>
+$ git checkout -b mysite
+$ git add -A &amp;&amp; git commit -m "Clear NSI demo"
+</pre>
+<h3>Identify yourself</h3>
+<p>
+Before creating a page, give your site a new identity by opening the NSI master
+configuration in <tt>sys/config</tt> and setting these values:
+</p>
+<ul>
+<li><tt>SITE_TITLE</tt>: The name of your website</li>
+<li><tt>ORG_NAME</tt>: The name of your organization, if you have one, otherwise you can delete or comment this line out.</li>
+<li><tt>ORG_URL</tt>: A link to your organization's website, if you have one (or it's elsewhere)</li>
+<li><tt>COPYRIGHT_BEGIN</tt>: The earliest date the copyright notice in the footer should display; the year this site was deployed, or earlier if your content came before it. Optionally, you can leave this blank or disable the copyright notice altogether by setting <tt>SHOW_COPYRIGHT=0</tt>.</li>
+</ul>
+<p>
+With these changes, the site is now yours, and NSI's demo identity has been wiped clean.
+Values written to a page's <tt>sys/config</tt> are <i>inheritable</i>, meaning any sub-pages
+will carry those same values down unless they overwrite them with a <tt>sys/config</tt> of their own. 
+</p>
+<h3>Introduce yourself</h3>
+<p>
+At this point, navigating to your new site will present you with nothing but a message:
+</p>
+<p><center><i>This page (un)intentionally left blank</i></center></p>
+<p>
+That is, of course, because we just wiped out all of the content. <b>It's now time to add some of your own.</b>
+</p>
+<p>
+An NSI page's static content is organized into two blocks: <b>intro</b> and <b>body</b>.
+The former places an HTML block that always appears near the top of the site, while the body's
+position can vary depending on how you configure special elements like the <b>table of contents</b>
+and <b>link list</b>, which we'll examine later.
+</p>
+<p>
+To create an intro for your site, simply create an <tt>intro.html</tt> in the
+same directory as <tt>index.cgi</tt> and start typing; introduce yourself, your
+project, or any content you wish, in pure unframed HTML. NSI will handle
+the page structure, style and metadata for you in the background.
+</p>
+<p>
+Once <tt>intro.html</tt> is saved, the next time you load your site, the NSI
+engine will always display it at the top of the page underneath the title. You
+now have a website!
+</p>
+<p>
+If you chose to keep the <tt>.git</tt> directory during the setup process,
+you can also use Git to track major changes to the site like this, with:
+</p>
+<pre>
+$ git add intro.html
+$ git commit -m "Created intro"
+</pre>
+<p>
+With git, you can easily <i>version</i> your changes, allowing you to roll back
+mistakes and reference earlier states of your website at any time.
+</p>
+<h3>Describe yourself</h3>
+<p>
+You might have noticed at this point that your new site still has no title,
+and your tab just says something like "Untitled - My Site." You could fix that
+by setting <tt>PAGE_TITLE=My Title</tt> in <tt>sys/config</tt> - your future
+sub-pages won't inherit it, but that workflow can get annoying after a while,
+and on top of that, when people find your site on a web search, it won't
+have a proper description!
+</p>
+<p>
+NSI's answer to this is the <tt>info</tt> file, a special file that quickly
+specifies your page's basic metadata. <tt>info</tt> is a plaintext file
+living in the same directory as your <tt>index.cgi</tt> with the following
+basic structure:
+</p>
+<pre>
+Page title
+Alternate title &lt;-- optional
+                &lt;-- this empty line must ALWAYS be present!
+Page description
+</pre>
+<p>
+The <b>page title</b> describes itself - this line will display on the page header,
+site navigation, and on search engines. Pick something short but descriptive. If
+you want your page to show a different title when it's being viewed directly,
+you can use the optional <b>alternate title</b>, which can allow you to use
+a longer or different name that only displays on the page itself. The <b>page
+description</b> can summarize your page to search engines, and also appears as
+a description if the page appears in another page's table of contents - useful
+as your site grows. 
+</p> 
+<p>For our new page, we might do something a little like this:</p>
+<pre>
+Home
+My Site
+
+My personal website
+</pre>
+<p>When you refresh the page, you'll now see a title "My Site" at the top, while
+the tab and navigation controls say "Home."</p>
+<h3>Complete yourself</h3>
+<p>
+Now, you have a basic, functioning web page with a header, and introduction, 
+but still no content. You still need a <b>body.</b>
+</p>
+<p>
+Like an intro, an NSI body is just a block of pure HTML, and can be created in 
+the same way by creating a <tt>body.html</tt> in the same directory as <tt>index.cgi</tt>.
+But large pages especially can get a bit unweildy, and so the real power of the body
+is its alternate form: <i>fragments</i>. In addition to looking for a <tt>body.html</tt>
+next to it, NSI's engine will look for a directory called <tt>body/</tt> and any
+files within it. If anything is present, NSI will compose them together in <b>alphabetical order</b>,
+allowing you to break up a massive page into smaller, more managable pages covering sections and
+subsections, and rearrange them at will. An example homepage might have a structure like this:
+</p>
+<pre>
+body/
+|-00-projects.html
+|-10-photos.html
+\-20-contact.html
+</pre>
+<p>
+Have any ideas? Simply create a <tt>body/</tt> directory next to <tt>index.cgi</tt> and start typing.
+NSI will compose them altogether into one page on the next load.
+</p>
+<p>...but there's <i>more</i>.</p>
+<p>
+NSI is mainly designed for static websites, but NSI can support dynamic pages, too!
+Through <b>executable</b> fragments. Executable fragments are just server-side scripts,
+which NSI can detect if they have a <tt>#!shebang</tt> in the first line, and will
+execute inline with the HTML fragments, composing the output into the final page.
+We wouldn't recommend using NSI to build applications with this functionality... 
+though perhaps you could.
+</p>
+<p>
+While your site probably won't need to be executing scripts server-side, let's
+try a simple demo, saved to <tt>body/21-uptime</tt>:
+</p>
+<pre>
+#!/usr/bin/env sh
+# title="Live system status"
+uptime
+</pre>
+<p>
+And making it executable with <tt>chmod +x 21-uptime</tt> gives us...
+</p>

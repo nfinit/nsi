@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 ###############################################################################
 # NSI: The New Standard Index       #                                         #
-my $version = '4.0.0.9';            #  A composer engine for simple websites  #
+my $version = '4.0.0.10';           #  A composer engine for simple websites  #
 my $author  = 'ict@nfinit.systems'; #                                         #
 ###############################################################################
 
@@ -341,7 +341,8 @@ sub page_titles {
 sub metadata_title {
 	my @titles = page_titles();
 	my $title = $titles[1];
-	$title = "${title} - ${SITE_TITLE}" if ($SITE_TITLE);
+	$title = "${title} - ${SITE_TITLE}" if ($SITE_TITLE && ($title ne $SITE_TITLE));
+	$title = plain_text($title);
 	$title = "<TITLE>${title}</TITLE>\n";
 	return($title);
 }
@@ -384,9 +385,21 @@ sub metadata_style {
 # Generate site <head> data from configuration
 sub generate_metadata {
 	my $metadata = $STATIC_METADATA;
-	# Get page description from config or file
-	# Get page keywords from config or file
-	# Get favicon from config or file
+	# Description: configured, or the page's info description
+	my $description = $PAGE_DESCRIPTION;
+	$description = (info($INFO_FILE))[2] if ($description eq "");
+	$description = plain_text($description);
+	$metadata .= "<META NAME=\"description\" CONTENT=\"${description}\">\n"
+		if ($description ne "");
+	$metadata .= "<META NAME=\"keywords\" CONTENT=\"" . plain_text($PAGE_KEYWORDS) . "\">\n"
+		if ($PAGE_KEYWORDS ne "");
+	# Favicon: the nearest one the browser can reach
+	foreach my $icon (crawl($FAVICON_FILE)) {
+		my $url = url_for($icon);
+		next if ($url eq "");
+		$metadata .= "<LINK REL=\"shortcut icon\" TYPE=\"image/x-icon\" HREF=\"${url}\">\n";
+		last;
+	}
 	$metadata .= metadata_title();
 	$metadata .= metadata_style();
 	return($metadata);
@@ -724,7 +737,7 @@ resolve_runtime();
 configure_page();
 # -----------------------------------------------------------------------------
 $_NSI_CONTENT = "";
-$_NSI_PAGE    = "Content-type: text/html\n\n";
+$_NSI_PAGE    = "Content-type: text/html; charset=UTF-8\n\n";
 # -----------------------------------------------------------------------------
 $_NSI_PAGE    .= "<!DOCTYPE ${HTML_DOCTYPE}>\n";
 $_NSI_PAGE    .= "<!-- NSI ${version} -->\n";

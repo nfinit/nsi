@@ -885,8 +885,8 @@ $_NSI_HEADER  .= page_navigation() if ($NAV_POSITION eq "top");
 $_NSI_CONTENT .= page_intro();
 $_NSI_CONTENT .= table_of_contents() if ($TOC eq "top");
 $_NSI_CONTENT .= page_body();
-$_NSI_CONTENT .= page_links();
 $_NSI_CONTENT .= table_of_contents() if ($TOC eq "bottom");
+$_NSI_CONTENT .= page_links();
 $_NSI_FOOTER .= page_navigation() if ($NAV_POSITION eq "bottom");
 $_NSI_FOOTER .= page_footer();
 if (!$_NSI_CONTENT) {

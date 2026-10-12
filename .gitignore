@@ -1,13 +1,16 @@
 # Development documentation (promoted to wiki)
-docs/*
+docs/
+
+# Local wiki copy
+wiki/
 
 # Agent steering and testing areas
 CLAUDE.md
 AGENTS.md
-sandbox/*
-archive/*
-AGENTS/*
-.kiro/*
+sandbox/
+archive/
+AGENTS/
+.kiro/
 
 # Miscellaneous files
 *.swp 

@@ -20,4 +20,4 @@ that can take advantage of them.
 
 NSI is tested against Perl 5.005 and later, and best runs under Apache or Lighttpd.
 
-For a demonstration of a real NSI site, [visit the official NSI website](nsi.nfinit.systems). 
+For a demonstration of a real NSI site, [visit the official NSI website](https://nsi.nfinit.systems). 

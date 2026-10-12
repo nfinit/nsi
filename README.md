@@ -17,3 +17,7 @@ NSI is built on progressive enhancement; its baseline output can target clients
 as early as Netscape and even NCSA Mosaic, while split-path stylesheet and
 script embedding can layer modern browser capabilities on top for clients
 that can take advantage of them.
+
+NSI is tested against Perl 5.005 and later, and best runs under Apache or Lighttpd.
+
+For a demonstration of a real NSI site, [visit the official NSI website](nsi.nfinit.systems). 

@@ -1,3 +1,5 @@
+![NSI logo](res/logo.gif)
+
 NSI: the New Standard Index
 ---------------------------
 NSI is an advanced, single-file CGI directory index that composes collections 

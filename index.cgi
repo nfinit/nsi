@@ -1,13 +1,13 @@
 #!/usr/bin/env perl
 ###############################################################################
 # NSI: The New Standard Index       #                                         #
-my $version = '4.0.0.13';           #  A composer engine for simple websites  #
+my $version = '4.0.0.14';           #  A composer engine for simple websites  #
 my $author  = 'ict@nfinit.systems'; #                                         #
 ###############################################################################
 
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
 # Avoid editing this file! Direct changes are easily overwritten by updates,  #
-# all of these variables are configurable externally                          #
+# all of these variables are configurable externally.                         #
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -72,6 +72,7 @@ $LINKS_SUBTITLE     = "";
 $CENTER_HEADER      = 0;
 $WRAP_SCRIPT_OUTPUT = 0; # Wrap executable fragments output in <PRE> tags
 $IMAGE_FILETYPES    = '\.(gif|jpe?g|png)$';
+$SHOW_ORG_TITLE     = 1;  # Show organization in auto-generated hostname titles
 $SHOW_COPYRIGHT     = 1;  # Only available when ORG_NAME is set 
 $FOOTER_NAV         = 1;  # Enable footer navigation controls
 $TIMESTAMP_FORMAT   = ""; # strftime format; empty = localtime (setting loads POSIX)
@@ -205,6 +206,19 @@ sub crawl {
 	return(@hits);
 }
 
+# HOSTNAME
+# Get the unqualified hostname of the system executing this script
+sub hostname {
+	# We assume the first word of hostname is always what we're looking for
+	my ($name) = split(' ', `hostname` || "");
+	return("") if (!defined($name));
+	# If the hostname is for some reason an IP address, just return it
+	return($name) if ($name =~ /^\d+(\.\d+){3}$/);
+	# Trim domain
+	$name =~ s/\..*$//;
+	return($name);
+}
+
 # URL FOR
 # Get a relative URL for a path based on the page chain, returns nothing
 # if the resource is beyond the web root
@@ -269,6 +283,13 @@ sub configure_page {
 		read_config($config);
 	}
 	expand_settings();
+	# If a site title hasn't been defined, we'll get one from the
+	# hostname and orgname
+	if ($SITE_TITLE eq "") {
+		$SITE_TITLE = hostname();
+		$SITE_TITLE .= " @ ${ORG_NAME}"
+			if ($SITE_TITLE ne "" && $ORG_NAME ne "" && $SHOW_ORG_TITLE);
+	}
 }
 
 # RESOLVE RUNTIME

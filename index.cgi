@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 ###############################################################################
 # NSI: The New Standard Index       #                                         #
-my $version = '4.0.0.14';           #  A composer engine for simple websites  #
+my $version = '4.0.0.15';           #  A composer engine for simple websites  #
 my $author  = 'ict@nfinit.systems'; #                                         #
 ###############################################################################
 
@@ -76,6 +76,10 @@ $SHOW_ORG_TITLE     = 1;  # Show organization in auto-generated hostname titles
 $SHOW_COPYRIGHT     = 1;  # Only available when ORG_NAME is set 
 $FOOTER_NAV         = 1;  # Enable footer navigation controls
 $TIMESTAMP_FORMAT   = ""; # strftime format; empty = localtime (setting loads POSIX)
+$SHOW_MESSAGES      = 0;  # Show fragment errors, etc. on page in addition to logs
+
+# Fragment defaults
+$FRAGMENT_TIMEOUT = 5; #seconds
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Universal helpers
@@ -781,8 +785,9 @@ sub body_fragment {
 	my $shebang = <FRAGMENT>;
 	my $options = <FRAGMENT>;
 	close(FRAGMENT);
-	# Return raw contents unless executable and with shebang on line 1
-	if (!(-x $path && $shebang =~ /^#!/)) {
+	$shebang = "" if (!defined($shebang)); # empty file, <FRAGMENT> returned undef
+	# Return raw contents unless there is a shebang on line 1
+	if ($shebang !~ /^#!/) {
 		open(FRAGMENT,$path) or return($fragment);
 		$fragment .= $_ while (<FRAGMENT>);
 		close(FRAGMENT);
@@ -796,7 +801,18 @@ sub body_fragment {
 		$wrap = 1 if ($part =~ /^\s*#?\s*wrap\s*$/i);
 		$wrap = 0 if ($part =~ /^\s*#?\s*no\s*wrap\s*$/i);
 	}
-	$fragment = run_fragment($path);
+	if (-x $path) {
+		my $timed_out;
+		($fragment,$timed_out) = run_fragment($path);
+		if ($timed_out) {
+			warn("NSI: ${path} ran longer than ${FRAGMENT_TIMEOUT}s, stopped\n");
+			$fragment = "";
+			$fragment = "[script fragment timed out after ${FRAGMENT_TIMEOUT} seconds]\n" if ($SHOW_MESSAGES);
+		}
+	} else {
+		warn("NSI: ${path} starts with #! but isn't executable, skipped\n");
+		$fragment = "[script fragment is not set as executable]\n" if ($SHOW_MESSAGES);
+	}
 	return("") if (!$fragment);
 	$fragment = "<PRE CLASS=\"script_output\">\n${fragment}</PRE>\n" if ($wrap);
 	$fragment = "<H2>${title}</H2>\n${fragment}" if ($title);
@@ -810,12 +826,25 @@ sub run_fragment {
 	local $_;
 	my ($path) = @_;
 	my $output = "";
+	my $timed_out = 0;
 	my $pid = open(SCRIPT,"-|");
-	return ($output) if (!defined($pid));
-	if (!$pid) { exec($path) or exit(127); } 
-	$output .= $_ while (<SCRIPT>);
+	return ($output,$timed_out) if (!defined($pid));
+	if (!$pid) { # is child process
+		setpgrp(0,0);
+		exec($path) or exit(127);
+	}
+	eval {
+		local $SIG{ALRM} = sub { die("timeout\n") };
+		alarm($FRAGMENT_TIMEOUT); # 0 = no limit
+		$output .= $_ while (<SCRIPT>);
+		alarm(0);
+	};
+	if ($@) {
+		$timed_out = 1;
+		kill(-9,$pid); # KILL whole group 
+	}
 	close(SCRIPT);
-	return($output);	
+	return($output, $timed_out);	
 }
 
 # PAGE BODY

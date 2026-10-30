@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 ###############################################################################
-# NSI: The New Standard Index       #                                         #
-my $version = '4.0.0.15';           #  A composer engine for simple websites  #
+#    NSI: The New Standard Index    #                                         #
+my $version = '4.0.0.16';           #  An index composer for simple websites  #
 my $author  = 'ict@nfinit.systems'; #                                         #
 ###############################################################################
 
@@ -36,6 +36,7 @@ $IMAGE_DIR         = 'img';
 $INTRO_FILE        = 'intro.html';
 $BODY_FILE         = 'body.html'; # single-file body, displays before fragments
 $BODY_DIR          = 'body';      # fragmented body files and executables
+$FOOTER_DIR        = '${RESOURCE_DIR}/footer'; # Custom subfooter
 $LINKS_FILE        = 'links';     # links to external websites
 $GROUPS_FILE       = 'groups'; # Use this file to group/annotate items in a TOC
 
@@ -149,6 +150,13 @@ sub parent_dir {
 # components that SCRIPT_NAME and SCRIPT_FILENAME have in common
 sub web_root {
 	my ($file, $url) = @_;
+	# Some web servers set SCRIPT_NAME to the directory path, rather
+	# than the script itself, a quick fix:
+	if ($url =~ /\/$/) {
+		my $script = $file;
+		$script =~ s/^.*\///;
+		$url .= $script;
+	}
 	my @file = split(/\//, $file);
 	my @url  = split(/\//, $url);
 	pop(@file); pop(@url); # drop the script name from both
@@ -718,6 +726,7 @@ sub toc_group {
 # Entries from this page's links file, in file order. Entries are blocks
 # separated by blank lines: a label, a URL, then an optional description.
 # Each entry is [label, url, description]; blocks without a URL are skipped.
+# TODO: Implement groups
 sub link_entries {
 	my @entries = ();
 	my $text = read_file($LINKS_FILE);
@@ -731,6 +740,12 @@ sub link_entries {
 		push(@entries, [$label, $url, join("\n", @description)]);
 	}
 	return(@entries);
+}
+
+# LINK GROUP
+# Similar to TOC group implementation
+sub link_group {
+	return("");
 }
 
 # PAGE LINKS
